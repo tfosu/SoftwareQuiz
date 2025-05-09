@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Take Assessment - SoftwareQuiz</title>
+    <style>
+        body { background: #f5f5f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .container { max-width: 800px; margin: 0 auto; padding: 20px; }
+        .header { background: #fff; padding: 1rem 0; margin-bottom: 2rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; }
+        .test-title { font-size: 2rem; color: #2c3e50; }
+        .test-desc { color: #666; margin-bottom: 1rem; }
+        .timer { font-size: 1.2rem; color: #e74c3c; font-weight: bold; }
+        .editor-label { margin-top: 2rem; font-weight: bold; }
+        textarea { width: 100%; min-height: 180px; font-family: monospace; font-size: 1rem; margin-bottom: 1rem; border-radius: 4px; border: 1px solid #ccc; padding: 10px; }
+        .test-cases { background: #fff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); padding: 1rem; margin-bottom: 2rem; }
+        .test-case-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; }
+        .test-case-status { font-weight: bold; }
+        .pass { color: #27ae60; }
+        .fail { color: #e74c3c; }
+        .run-btn, .submit-btn { padding: 10px 24px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin-right: 10px; }
+        .run-btn { background: #3498db; color: #fff; }
+        .run-btn:hover { background: #2980b9; }
+        .submit-btn { background: #2ecc71; color: #fff; }
+        .submit-btn:disabled { background: #bdc3c7; cursor: not-allowed; }
+        .result-msg { margin-top: 1rem; font-size: 1.1rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="test-title" id="testTitle">Loading...</div>
+            <div class="test-desc" id="testDesc"></div>
+            <div class="timer" id="timer">Time Remaining: --:--</div>
+        </div>
+        <div class="editor-label">Implement the function:</div>
+        <pre id="functionSignature" style="background:#f8f8f8;padding:10px;border-radius:4px;"></pre>
+        <textarea id="codeEditor" spellcheck="false"></textarea>
+        <button class="run-btn" onclick="runTests()">Run Tests</button>
+        <button class="submit-btn" id="submitBtn" onclick="submitAssessment()">Submit</button>
+        <div class="result-msg" id="resultMsg"></div>
+        <div class="test-cases" id="testCasesContainer"></div>
+    </div>
+    <script>
+    let assessment = null;
+    let timeLeft = 0;
+    let timerInterval = null;
+    let testResults = [];
+    let submitted = false;
+
+    // Get token from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+    if (!token) {
+        alert('Invalid assessment link');
+        window.location.href = '/';
+    }
+
+    // Load assessment
+    async function loadAssessment() {
+        try {
+            const response = await fetch(`/api/candidates/take/${token}`);
+            if (!response.ok) throw new Error('Failed to load assessment');
+            assessment = await response.json();
+            document.getElementById('testTitle').textContent = assessment.test_name;
+            document.getElementById('testDesc').textContent = assessment.description;
+            document.getElementById('functionSignature').textContent =
+                `function solution(${JSON.parse(assessment.arg_names).join(', ')}) {\n    // your code here\n}`;
+            document.getElementById('codeEditor').value =
+                `function solution(${JSON.parse(assessment.arg_names).join(', ')}) {\n    // your code here\n}`;
+            timeLeft = assessment.time_limit * 60;
+            startTimer();
+            renderTestCases();
+        } catch (error) {
+            alert('Failed to load assessment.');
+            window.location.href = '/';
+        }
+    }
+
+    function renderTestCases() {
+        const container = document.getElementById('testCasesContainer');
+        container.innerHTML = '<h3>Test Cases</h3>' + assessment.test_cases.map((tc, i) => `
+            <div class="test-case-row" id="tcrow${i}">
+                <span>Input: <code>${Object.entries(JSON.parse(tc.args_vals)).map(([k,v]) => `${k}: ${JSON.stringify(v)}`).join(', ')}</code></span>
+                <span>Expected: <code>${tc.expected_val}</code></span>
+                <span class="test-case-status" id="tcstatus${i}"></span>
+            </div>
+        `).join('');
+    }
+
+    function startTimer() {
+        updateTimerDisplay();
+        timerInterval = setInterval(() => {
+            timeLeft--;
+            updateTimerDisplay();
+            if (timeLeft <= 0) {
+                clearInterval(timerInterval);
+                submitAssessment();
+            }
+        }, 1000);
+    }
+    function updateTimerDisplay() {
+        const min = Math.floor(timeLeft / 60);
+        const sec = timeLeft % 60;
+        document.getElementById('timer').textContent = `Time Remaining: ${min.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;
+    }
+
+    function runTests() {
+        if (!assessment) return;
+        const code = document.getElementById('codeEditor').value;
+        testResults = [];
+        let allPass = true;
+        for (let i = 0; i < assessment.test_cases.length; i++) {
+            const tc = assessment.test_cases[i];
+            let result, pass = false, error = null;
+            try {
+                // eslint-disable-next-line no-new-func
+                const func = new Function(code + `\nreturn solution;`)();
+                const args = JSON.parse(tc.args_vals);
+                const output = func(...Object.values(args));
+                pass = output === tc.expected_val;
+                result = output;
+            } catch (e) {
+                error = e.message;
+                pass = false;
+                allPass = false;
+            }
+            testResults[i] = pass;
+            document.getElementById('tcstatus'+i).textContent = pass ? 'PASS' : (error ? 'ERROR' : 'FAIL');
+            document.getElementById('tcstatus'+i).className = 'test-case-status ' + (pass ? 'pass' : 'fail');
+            if (error) document.getElementById('tcstatus'+i).title = error;
+            if (!pass) allPass = false;
+        }
+        document.getElementById('resultMsg').textContent = allPass ? 'All test cases passed!' : 'Some test cases failed.';
+        return allPass;
+    }
+
+    async function submitAssessment() {
+        if (submitted) return;
+        submitted = true;
+        clearInterval(timerInterval);
+        document.getElementById('submitBtn').disabled = true;
+        const allPass = runTests();
+        let score = 0;
+        if (assessment && assessment.test_cases) {
+            score = testResults.filter(Boolean).length / assessment.test_cases.length * 100;
+        }
+        try {
+            await fetch(`/api/candidates/submit/${token}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: allPass ? 'PASS' : 'FAIL', score: Math.round(score) })
+            });
+            document.getElementById('resultMsg').textContent = allPass ? 'Assessment submitted! You passed!' : 'Assessment submitted. You did not pass.';
+        } catch (error) {
+            document.getElementById('resultMsg').textContent = 'Error submitting assessment.';
+        }
+    }
+
+    loadAssessment();
+    </script>
+</body>
+</html> 

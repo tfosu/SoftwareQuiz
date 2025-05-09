@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tests - SoftwareQuiz</title>
+    <style>
+        body { background: #f5f5f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        header { background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.1); padding: 1rem 0; margin-bottom: 2rem; }
+        nav { display: flex; justify-content: space-between; align-items: center; }
+        .logo { font-size: 1.5rem; font-weight: bold; color: #2c3e50; text-decoration: none; }
+        .nav-links a { margin-left: 20px; text-decoration: none; color: #2c3e50; font-weight: bold; padding: 8px 16px; border-radius: 4px; }
+        .nav-links a.active, .nav-links a:hover { background: #3498db; color: #fff; }
+        .dashboard-header { margin-bottom: 2rem; }
+        .create-quiz-btn { padding: 12px 24px; background-color: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; text-decoration: none; font-weight: bold; }
+        .quiz-card { background-color: #fff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 20px; }
+        .quiz-card h3 { color: #2c3e50; margin-bottom: 10px; }
+        .quiz-stats { display: flex; gap: 20px; margin: 15px 0; color: #666; font-size: 0.9rem; }
+        .quiz-actions { display: flex; gap: 10px; margin-top: 15px; }
+        .quiz-actions button { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.9rem; }
+        .edit-btn { background-color: #3498db; color: white; }
+        .delete-btn { background-color: #e74c3c; color: white; }
+        /* Modal styles */
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: rgba(0,0,0,0.5); z-index: 1000; overflow-y: auto; }
+        .modal-content { background-color: #fff; margin: 40px auto; padding: 20px; border-radius: 8px; width: 90%; max-width: 500px; max-height: 90vh; overflow-y: auto; position: relative; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .close-btn { font-size: 1.5rem; cursor: pointer; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; }
+        .form-group input, .form-group textarea { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+        .test-case-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+        .test-case-row input { flex: 1; }
+        .test-case-row button { background: #e74c3c; color: #fff; border: none; border-radius: 4px; padding: 4px 10px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <header>
+        <nav class="container">
+            <a href="tests.html" class="logo">SoftwareQuiz</a>
+            <div class="nav-links">
+                <a href="tests.html" class="active">Tests</a>
+                <a href="candidates.html">Candidates</a>
+                <a href="#" id="logoutBtn" style="background:#e74c3c;color:#fff;">Logout</a>
+            </div>
+        </nav>
+    </header>
+    <main class="container">
+        <div class="dashboard-header">
+            <h1>Your Tests</h1>
+            <button class="create-quiz-btn" onclick="showCreateTestModal()">Create New Test</button>
+        </div>
+        <div id="testsList"></div>
+    </main>
+    <!-- Test Modal -->
+    <div id="testModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="testModalTitle">Create New Test</h2>
+                <span class="close-btn" onclick="hideTestModal()">&times;</span>
+            </div>
+            <form id="testForm">
+                <div class="form-group">
+                    <label for="testName">Test Name</label>
+                    <input type="text" id="testName" required>
+                </div>
+                <div class="form-group">
+                    <label for="testInstructions">Instructions for Candidate</label>
+                    <textarea id="testInstructions" rows="3" required placeholder="Make sure to mention the name of the function the candidate is to write"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="testTimeLimit">Time Limit (minutes)</label>
+                    <input type="number" id="testTimeLimit" min="1" value="30" required>
+                </div>
+                <div class="form-group">
+                    <label for="testCode">Tests (JavaScript code that will run as tests)</label>
+                    <textarea id="testCode" rows="8" required placeholder="// Example:\nexpect(solution(1,2)).toBe(3);\nexpect(solution(5,5)).toBe(10);\n// ..."></textarea>
+                </div>
+                <button type="submit" class="create-quiz-btn" id="testFormSubmitBtn">Create Test</button>
+            </form>
+        </div>
+    </div>
+    <script>
+    // Auth check
+    async function checkAuth() {
+        try {
+            const response = await fetch('/api/auth/me', { credentials: 'include' });
+            if (!response.ok) window.location.href = '/login.html';
+        } catch {
+            window.location.href = '/login.html';
+        }
+    }
+    checkAuth();
+    // Logout
+    document.getElementById('logoutBtn').onclick = async function() {
+        await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+        window.location.href = '/login.html';
+    };
+    let editingTestId = null;
+    // Load tests
+    async function loadTests() {
+        try {
+            const response = await fetch('/api/tests', { credentials: 'include' });
+            if (!response.ok) throw new Error('Failed to load tests');
+            const tests = await response.json();
+            const testsList = document.getElementById('testsList');
+            if (tests.length === 0) {
+                testsList.innerHTML = '<p>No tests found. Create one!</p>';
+                return;
+            }
+            testsList.innerHTML = tests.map(test => `
+                <div class="quiz-card">
+                    <h3>${test.name}</h3>
+                    <p>${test.instructions}</p>
+                    <div class="quiz-stats">
+                        <span>${test.time_limit} min</span>
+                    </div>
+                    <div class="quiz-actions">
+                        <button class="edit-btn" onclick="editTest(${test.id})">Edit</button>
+                        <button class="delete-btn" onclick="deleteTest(${test.id})">Delete</button>
+                    </div>
+                </div>
+            `).join('');
+        } catch (error) {
+            document.getElementById('testsList').innerHTML = '<p>Error loading tests.</p>';
+        }
+    }
+    // Show/Hide Test Modal
+    function showCreateTestModal() {
+        editingTestId = null;
+        document.getElementById('testModalTitle').textContent = 'Create New Test';
+        document.getElementById('testFormSubmitBtn').textContent = 'Create Test';
+        document.getElementById('testName').value = '';
+        document.getElementById('testInstructions').value = '';
+        document.getElementById('testTimeLimit').value = 30;
+        document.getElementById('testCode').value = '';
+        document.getElementById('testModal').style.display = 'block';
+    }
+    function hideTestModal() {
+        document.getElementById('testModal').style.display = 'none';
+    }
+    // Handle test form submit
+    async function handleTestFormSubmit(event) {
+        event.preventDefault();
+        const name = document.getElementById('testName').value;
+        const instructions = document.getElementById('testInstructions').value;
+        const timeLimit = parseInt(document.getElementById('testTimeLimit').value);
+        const testsCode = document.getElementById('testCode').value;
+        if (!name || !instructions || !timeLimit || !testsCode) {
+            alert('Please fill in all fields.');
+            return;
+        }
+        const body = JSON.stringify({ name, instructions, time_limit: timeLimit, tests_code: testsCode });
+        try {
+            let response;
+            if (editingTestId) {
+                response = await fetch(`/api/tests/${editingTestId}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body,
+                    credentials: 'include'
+                });
+            } else {
+                response = await fetch('/api/tests', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body,
+                    credentials: 'include'
+                });
+            }
+            if (!response.ok) throw new Error('Failed to save test');
+            hideTestModal();
+            loadTests();
+        } catch (error) {
+            alert('Error saving test: ' + error.message);
+        }
+    }
+    document.getElementById('testForm').addEventListener('submit', handleTestFormSubmit);
+    // Edit test
+    async function editTest(id) {
+        try {
+            const response = await fetch(`/api/tests/${id}`, { credentials: 'include' });
+            if (!response.ok) throw new Error('Failed to load test');
+            const test = await response.json();
+            editingTestId = id;
+            document.getElementById('testModalTitle').textContent = 'Edit Test';
+            document.getElementById('testFormSubmitBtn').textContent = 'Save Changes';
+            document.getElementById('testName').value = test.name;
+            document.getElementById('testInstructions').value = test.instructions;
+            document.getElementById('testTimeLimit').value = test.time_limit;
+            document.getElementById('testCode').value = test.tests_code;
+            document.getElementById('testModal').style.display = 'block';
+        } catch (error) {
+            alert('Error loading test: ' + error.message);
+        }
+    }
+    // Delete test
+    async function deleteTest(id) {
+        if (!confirm('Are you sure you want to delete this test?')) return;
+        try {
+            const response = await fetch(`/api/tests/${id}`, {
+                method: 'DELETE',
+                credentials: 'include'
+            });
+            if (!response.ok) throw new Error('Failed to delete test');
+            loadTests();
+        } catch (error) {
+            alert('Error deleting test: ' + error.message);
+        }
+    }
+    // Initial load
+    loadTests();
+    </script>
+</body>
+</html> 
