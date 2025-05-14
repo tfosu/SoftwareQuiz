@@ -40,20 +40,43 @@ function initializeDatabase() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
         name TEXT NOT NULL,
-        instructions TEXT NOT NULL,
-        time_limit INTEGER NOT NULL,
-        tests_code TEXT NOT NULL,
+        description TEXT,
+        time_limit INTEGER NOT NULL, -- in minutes
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id)
       )
     `, logResult('tests'));
 
     db.run(`
+      CREATE TABLE IF NOT EXISTS questions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        test_id INTEGER NOT NULL,
+        question_text TEXT NOT NULL,
+        question_type TEXT NOT NULL, -- 'multiple_choice' or 'freeform'
+        points INTEGER NOT NULL DEFAULT 1,
+        order_index INTEGER NOT NULL, -- to maintain question order
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (test_id) REFERENCES tests(id) ON DELETE CASCADE
+      )
+    `, logResult('questions'));
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS multiple_choice_options (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question_id INTEGER NOT NULL,
+        option_text TEXT NOT NULL,
+        is_correct BOOLEAN NOT NULL DEFAULT 0,
+        order_index INTEGER NOT NULL, -- to maintain option order
+        FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE
+      )
+    `, logResult('multiple_choice_options'));
+
+    db.run(`
       CREATE TABLE IF NOT EXISTS assessments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         test_id INTEGER NOT NULL,
         candidate_id INTEGER NOT NULL,
-        status TEXT DEFAULT 'NOT TAKEN',
+        status TEXT DEFAULT 'NOT TAKEN', -- 'PASS', 'FAIL', 'NOT TAKEN', 'IN_PROGRESS'
         start_time DATETIME,
         end_time DATETIME,
         score INTEGER,
@@ -62,6 +85,23 @@ function initializeDatabase() {
         FOREIGN KEY (candidate_id) REFERENCES candidates(id)
       )
     `, logResult('assessments'));
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS candidate_answers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        assessment_id INTEGER NOT NULL,
+        question_id INTEGER NOT NULL,
+        answer_text TEXT,
+        selected_option_id INTEGER,
+        is_correct BOOLEAN,
+        points_earned INTEGER,
+        feedback TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE CASCADE,
+        FOREIGN KEY (question_id) REFERENCES questions(id),
+        FOREIGN KEY (selected_option_id) REFERENCES multiple_choice_options(id)
+      )
+    `, logResult('candidate_answers'));
 
     // Close the database after all tables are created
     db.close((err) => {

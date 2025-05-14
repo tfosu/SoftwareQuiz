@@ -41,6 +41,7 @@
             <div class="nav-links">
                 <a href="tests.html" class="active">Tests</a>
                 <a href="candidates.html">Candidates</a>
+                <a href="questions.html">Questions</a>
                 <a href="#" id="logoutBtn" style="background:#e74c3c;color:#fff;">Logout</a>
             </div>
         </nav>
@@ -48,7 +49,7 @@
     <main class="container">
         <div class="dashboard-header">
             <h1>Your Tests</h1>
-            <button class="create-quiz-btn" onclick="showCreateTestModal()">Create New Test</button>
+            <a class="create-quiz-btn" href="create-test.html">Create New Test</a>
         </div>
         <div id="testsList"></div>
     </main>
@@ -111,12 +112,12 @@
             testsList.innerHTML = tests.map(test => `
                 <div class="quiz-card">
                     <h3>${test.name}</h3>
-                    <p>${test.instructions}</p>
+                    <p>${test.description || ''}</p>
                     <div class="quiz-stats">
                         <span>${test.time_limit} min</span>
                     </div>
                     <div class="quiz-actions">
-                        <button class="edit-btn" onclick="editTest(${test.id})">Edit</button>
+                        <a class="edit-btn" href="create-test.html?edit=${test.id}">Edit</a>
                         <button class="delete-btn" onclick="deleteTest(${test.id})">Delete</button>
                     </div>
                 </div>
