@@ -6,6 +6,7 @@ const { authenticateToken } = require('../middleware/auth');
 // Get all questions for a test
 router.get('/test/:testId', authenticateToken, (req, res) => {
     const { testId } = req.params;
+    console.log('Fetching questions for test:', { testId });
     
     db.all(`
         SELECT q.*, 
@@ -17,7 +18,7 @@ router.get('/test/:testId', authenticateToken, (req, res) => {
         ORDER BY q.order_index
     `, [testId], (err, questions) => {
         if (err) {
-            console.error('Error fetching questions:', err);
+            console.error('DB error on questions fetch:', err);
             return res.status(500).json({ error: 'Failed to fetch questions' });
         }
 
@@ -35,6 +36,7 @@ router.get('/test/:testId', authenticateToken, (req, res) => {
             }) : []
         }));
 
+        console.log('Questions fetched successfully:', { testId, count: formattedQuestions.length });
         res.json(formattedQuestions);
     });
 });
@@ -42,13 +44,14 @@ router.get('/test/:testId', authenticateToken, (req, res) => {
 // Create a new question
 router.post('/', authenticateToken, (req, res) => {
     const { test_id, question_text, question_type, points, order_index, options } = req.body;
+    console.log('Creating question:', { test_id, question_type });
 
     db.run(`
         INSERT INTO questions (test_id, question_text, question_type, points, order_index)
         VALUES (?, ?, ?, ?, ?)
     `, [test_id, question_text, question_type, points, order_index], function(err) {
         if (err) {
-            console.error('Error creating question:', err);
+            console.error('DB error on question creation:', err);
             return res.status(500).json({ error: 'Failed to create question' });
         }
 
@@ -65,12 +68,14 @@ router.post('/', authenticateToken, (req, res) => {
                 VALUES ${optionValues}
             `, (err) => {
                 if (err) {
-                    console.error('Error creating options:', err);
+                    console.error('DB error on options creation:', err);
                     return res.status(500).json({ error: 'Failed to create question options' });
                 }
+                console.log('Question created successfully with options:', { questionId });
                 res.json({ id: questionId, message: 'Question created successfully' });
             });
         } else {
+            console.log('Question created successfully:', { questionId });
             res.json({ id: questionId, message: 'Question created successfully' });
         }
     });
@@ -80,14 +85,14 @@ router.post('/', authenticateToken, (req, res) => {
 router.put('/:id', authenticateToken, (req, res) => {
     const { id } = req.params;
     const { question_text, points, options } = req.body;
-
+    console.log('Updating question:', { id });
     db.run(`
         UPDATE questions 
         SET question_text = ?, points = ?
         WHERE id = ?
     `, [question_text, points, id], (err) => {
         if (err) {
-            console.error('Error updating question:', err);
+            console.error('DB error on question update:', err);
             return res.status(500).json({ error: 'Failed to update question' });
         }
 
@@ -96,7 +101,7 @@ router.put('/:id', authenticateToken, (req, res) => {
             // First delete existing options
             db.run('DELETE FROM multiple_choice_options WHERE question_id = ?', [id], (err) => {
                 if (err) {
-                    console.error('Error deleting old options:', err);
+                    console.error('DB error on options deletion:', err);
                     return res.status(500).json({ error: 'Failed to update question options' });
                 }
 
@@ -110,13 +115,15 @@ router.put('/:id', authenticateToken, (req, res) => {
                     VALUES ${optionValues}
                 `, (err) => {
                     if (err) {
-                        console.error('Error creating new options:', err);
+                        console.error('DB error on options update:', err);
                         return res.status(500).json({ error: 'Failed to update question options' });
                     }
+                    console.log('Question updated successfully with options:', { id });
                     res.json({ message: 'Question updated successfully' });
                 });
             });
         } else {
+            console.log('Question updated successfully:', { id });
             res.json({ message: 'Question updated successfully' });
         }
     });
@@ -125,12 +132,13 @@ router.put('/:id', authenticateToken, (req, res) => {
 // Delete a question
 router.delete('/:id', authenticateToken, (req, res) => {
     const { id } = req.params;
-
+    console.log('Deleting question:', { id });
     db.run('DELETE FROM questions WHERE id = ?', [id], (err) => {
         if (err) {
-            console.error('Error deleting question:', err);
+            console.error('DB error on question deletion:', err);
             return res.status(500).json({ error: 'Failed to delete question' });
         }
+        console.log('Question deleted successfully:', { id });
         res.json({ message: 'Question deleted successfully' });
     });
 });
@@ -138,15 +146,18 @@ router.delete('/:id', authenticateToken, (req, res) => {
 // Reorder questions
 router.post('/reorder', authenticateToken, (req, res) => {
     const { questions } = req.body; // Array of {id, order_index}
-
+    console.log('Reordering questions:', { questions });
     const updates = questions.map(q => 
         db.run('UPDATE questions SET order_index = ? WHERE id = ?', [q.order_index, q.id])
     );
 
     Promise.all(updates)
-        .then(() => res.json({ message: 'Questions reordered successfully' }))
+        .then(() => {
+            console.log('Questions reordered successfully');
+            res.json({ message: 'Questions reordered successfully' });
+        })
         .catch(err => {
-            console.error('Error reordering questions:', err);
+            console.error('DB error on questions reorder:', err);
             res.status(500).json({ error: 'Failed to reorder questions' });
         });
 });
@@ -154,8 +165,10 @@ router.post('/reorder', authenticateToken, (req, res) => {
 // Get all questions for the logged-in user (with test name and options)
 router.get('/all', (req, res) => {
     if (!req.session.userId) {
+        console.log('Get all questions failed: Not authenticated');
         return res.status(401).json({ message: 'Not authenticated' });
     }
+    console.log('Fetching all questions for userId:', req.session.userId);
     db.all(`
         SELECT q.*, t.name as test_name
         FROM questions q
@@ -164,7 +177,7 @@ router.get('/all', (req, res) => {
         ORDER BY q.created_at DESC
     `, [req.session.userId], async (err, questions) => {
         if (err) {
-            console.error('Error fetching all questions:', err);
+            console.error('DB error on all questions fetch:', err);
             return res.status(500).json({ error: 'Failed to fetch questions' });
         }
         // For each question, get options if multiple_choice
@@ -181,6 +194,7 @@ router.get('/all', (req, res) => {
                 }
             });
         }));
+        console.log('All questions fetched successfully:', { count: withOptions.length });
         res.json(withOptions);
     });
 });

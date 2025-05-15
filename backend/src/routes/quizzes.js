@@ -14,6 +14,7 @@ const requireAuth = (req, res, next) => {
 
 // Get all quizzes for the logged-in employer
 router.get('/', requireAuth, (req, res) => {
+    console.log('Fetching all quizzes for userId:', req.session.userId);
     db.all(`
         SELECT q.*, 
                COUNT(qq.id) as question_count
@@ -24,9 +25,10 @@ router.get('/', requireAuth, (req, res) => {
         ORDER BY q.created_at DESC
     `, [req.session.userId], (err, quizzes) => {
         if (err) {
-            console.error('Database error:', err);
+            console.error('DB error on quiz list:', err);
             return res.status(500).json({ message: 'Internal server error' });
         }
+        console.log('Quizzes fetched successfully:', { count: quizzes.length });
         res.json(quizzes);
     });
 });
@@ -34,20 +36,20 @@ router.get('/', requireAuth, (req, res) => {
 // Create a new quiz
 router.post('/', requireAuth, (req, res) => {
     const { title, description, timeLimit } = req.body;
-
+    console.log('Creating quiz:', { title, userId: req.session.userId });
     if (!title) {
+        console.log('Create quiz failed: Title is required');
         return res.status(400).json({ message: 'Title is required' });
     }
-
     db.run(`
         INSERT INTO quizzes (employer_id, title, description, time_limit)
         VALUES (?, ?, ?, ?)
     `, [req.session.userId, title, description, timeLimit], function(err) {
         if (err) {
-            console.error('Database error:', err);
+            console.error('DB error on quiz creation:', err);
             return res.status(500).json({ message: 'Internal server error' });
         }
-
+        console.log('Quiz created successfully:', { quizId: this.lastID });
         res.status(201).json({
             id: this.lastID,
             title,
@@ -60,7 +62,7 @@ router.post('/', requireAuth, (req, res) => {
 // Get a specific quiz
 router.get('/:id', requireAuth, (req, res) => {
     const quizId = req.params.id;
-
+    console.log('Fetching quiz:', { quizId, userId: req.session.userId });
     db.get(`
         SELECT q.*, 
                COUNT(qq.id) as question_count
@@ -70,22 +72,21 @@ router.get('/:id', requireAuth, (req, res) => {
         GROUP BY q.id
     `, [quizId, req.session.userId], (err, quiz) => {
         if (err) {
-            console.error('Database error:', err);
+            console.error('DB error on quiz fetch:', err);
             return res.status(500).json({ message: 'Internal server error' });
         }
-
         if (!quiz) {
+            console.log('Quiz not found:', { quizId, userId: req.session.userId });
             return res.status(404).json({ message: 'Quiz not found' });
         }
-
         // Get questions for this quiz
         db.all('SELECT * FROM questions WHERE quiz_id = ?', [quizId], (err, questions) => {
             if (err) {
-                console.error('Database error:', err);
+                console.error('DB error on questions fetch:', err);
                 return res.status(500).json({ message: 'Internal server error' });
             }
-
             quiz.questions = questions;
+            console.log('Quiz fetched successfully:', { quizId });
             res.json(quiz);
         });
     });
@@ -95,25 +96,25 @@ router.get('/:id', requireAuth, (req, res) => {
 router.put('/:id', requireAuth, (req, res) => {
     const quizId = req.params.id;
     const { title, description, timeLimit } = req.body;
-
+    console.log('Updating quiz:', { quizId, userId: req.session.userId });
     if (!title) {
+        console.log('Update quiz failed: Title is required');
         return res.status(400).json({ message: 'Title is required' });
     }
-
     db.run(`
         UPDATE quizzes 
         SET title = ?, description = ?, time_limit = ?
         WHERE id = ? AND employer_id = ?
     `, [title, description, timeLimit, quizId, req.session.userId], function(err) {
         if (err) {
-            console.error('Database error:', err);
+            console.error('DB error on quiz update:', err);
             return res.status(500).json({ message: 'Internal server error' });
         }
-
         if (this.changes === 0) {
+            console.log('Quiz not found for update:', { quizId, userId: req.session.userId });
             return res.status(404).json({ message: 'Quiz not found' });
         }
-
+        console.log('Quiz updated successfully:', { quizId });
         res.json({ message: 'Quiz updated successfully' });
     });
 });
@@ -121,17 +122,17 @@ router.put('/:id', requireAuth, (req, res) => {
 // Delete a quiz
 router.delete('/:id', requireAuth, (req, res) => {
     const quizId = req.params.id;
-
+    console.log('Deleting quiz:', { quizId, userId: req.session.userId });
     db.run('DELETE FROM quizzes WHERE id = ? AND employer_id = ?', [quizId, req.session.userId], function(err) {
         if (err) {
-            console.error('Database error:', err);
+            console.error('DB error on quiz deletion:', err);
             return res.status(500).json({ message: 'Internal server error' });
         }
-
         if (this.changes === 0) {
+            console.log('Quiz not found for deletion:', { quizId, userId: req.session.userId });
             return res.status(404).json({ message: 'Quiz not found' });
         }
-
+        console.log('Quiz deleted successfully:', { quizId });
         res.json({ message: 'Quiz deleted successfully' });
     });
 });
@@ -140,38 +141,44 @@ router.delete('/:id', requireAuth, (req, res) => {
 router.post('/:id/invite', requireAuth, async (req, res) => {
     const quizId = req.params.id;
     const { candidateEmail } = req.body;
-
+    console.log('Inviting candidate to quiz:', { quizId, candidateEmail, userId: req.session.userId });
     if (!candidateEmail) {
+        console.log('Invite candidate failed: Candidate email is required');
         return res.status(400).json({ message: 'Candidate email is required' });
     }
-
     try {
         // Check if quiz exists and belongs to employer
         const quiz = await new Promise((resolve, reject) => {
             db.get('SELECT * FROM quizzes WHERE id = ? AND employer_id = ?', [quizId, req.session.userId], (err, row) => {
-                if (err) reject(err);
-                resolve(row);
+                if (err) {
+                    console.error('DB error on quiz check:', err);
+                    reject(err);
+                } else {
+                    resolve(row);
+                }
             });
         });
-
         if (!quiz) {
+            console.log('Quiz not found for invitation:', { quizId, userId: req.session.userId });
             return res.status(404).json({ message: 'Quiz not found' });
         }
-
         // Generate invitation token
         const invitationToken = uuidv4();
-
+        console.log('Creating invitation for quiz:', { quizId, candidateEmail, invitationToken });
         // Create invitation record
         await new Promise((resolve, reject) => {
             db.run(`
                 INSERT INTO quiz_invitations (quiz_id, candidate_email, invitation_token)
                 VALUES (?, ?, ?)
             `, [quizId, candidateEmail, invitationToken], function(err) {
-                if (err) reject(err);
-                resolve(this.lastID);
+                if (err) {
+                    console.error('DB error on invitation creation:', err);
+                    reject(err);
+                } else {
+                    resolve(this.lastID);
+                }
             });
         });
-
         // Send invitation email
         const transporter = nodemailer.createTransport({
             host: process.env.SMTP_HOST,
@@ -182,9 +189,8 @@ router.post('/:id/invite', requireAuth, async (req, res) => {
                 pass: process.env.SMTP_PASS
             }
         });
-
         const quizUrl = `${process.env.FRONTEND_URL}/quiz.html?token=${invitationToken}`;
-        
+        console.log('Sending invitation email to:', { candidateEmail, quizUrl });
         await transporter.sendMail({
             from: process.env.SMTP_FROM,
             to: candidateEmail,
@@ -197,7 +203,7 @@ router.post('/:id/invite', requireAuth, async (req, res) => {
                 <p>This invitation will expire in 7 days.</p>
             `
         });
-
+        console.log('Invitation sent successfully');
         res.json({ message: 'Invitation sent successfully' });
     } catch (error) {
         console.error('Invitation error:', error);
@@ -208,7 +214,7 @@ router.post('/:id/invite', requireAuth, async (req, res) => {
 // Get quiz for candidate to take
 router.get('/take/:token', async (req, res) => {
     const { token } = req.params;
-
+    console.log('Fetching quiz for candidate by token:', { token });
     try {
         // Get invitation
         const invitation = await new Promise((resolve, reject) => {
@@ -218,23 +224,29 @@ router.get('/take/:token', async (req, res) => {
                 JOIN quizzes q ON qi.quiz_id = q.id
                 WHERE qi.invitation_token = ? AND qi.status = 'pending'
             `, [token], (err, row) => {
-                if (err) reject(err);
-                resolve(row);
+                if (err) {
+                    console.error('DB error on invitation fetch:', err);
+                    reject(err);
+                } else {
+                    resolve(row);
+                }
             });
         });
-
         if (!invitation) {
+            console.log('Invalid or expired invitation for token:', { token });
             return res.status(404).json({ message: 'Invalid or expired invitation' });
         }
-
         // Get questions
         const questions = await new Promise((resolve, reject) => {
             db.all('SELECT * FROM questions WHERE quiz_id = ?', [invitation.quiz_id], (err, rows) => {
-                if (err) reject(err);
-                resolve(rows);
+                if (err) {
+                    console.error('DB error on questions fetch:', err);
+                    reject(err);
+                } else {
+                    resolve(rows);
+                }
             });
         });
-
         // Format questions for the quiz
         const formattedQuestions = questions.map(q => ({
             id: q.id,
@@ -242,7 +254,7 @@ router.get('/take/:token', async (req, res) => {
             options: JSON.parse(q.options),
             points: q.points
         }));
-
+        console.log('Quiz fetched successfully for candidate:', { quizId: invitation.quiz_id });
         res.json({
             id: invitation.quiz_id,
             title: invitation.title,
@@ -251,7 +263,7 @@ router.get('/take/:token', async (req, res) => {
             questions: formattedQuestions
         });
     } catch (error) {
-        console.error('Error getting quiz:', error);
+        console.error('Quiz fetch error:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
 });

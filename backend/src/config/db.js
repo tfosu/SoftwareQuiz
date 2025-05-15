@@ -44,11 +44,17 @@ function initializeDatabase() {
             name TEXT NOT NULL,
             instructions TEXT NOT NULL,
             time_limit INTEGER NOT NULL, -- in minutes
-            tests_code TEXT NOT NULL, -- JS code for test cases
+            tests_code TEXT NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id)
         )
-    `);
+    `, (err) => {
+        if (err) {
+            console.error('Error creating tests table:', err);
+        } else {
+            console.log('Table tests created or already exists.');
+        }
+    });
 
     // Create assessments table
     db.run(`

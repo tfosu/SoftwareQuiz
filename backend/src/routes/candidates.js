@@ -13,6 +13,7 @@ function requireAuth(req, res, next) {
 
 // List all candidates for the logged-in user (with their assessments)
 router.get('/', requireAuth, (req, res) => {
+    console.log('Fetching all candidates for userId:', req.session.userId);
     db.all(`
         SELECT c.*, a.id as assessment_id, a.status, a.test_id, a.start_time, a.end_time, a.score
         FROM candidates c
@@ -21,7 +22,11 @@ router.get('/', requireAuth, (req, res) => {
         WHERE t.user_id = ?
         ORDER BY c.created_at DESC
     `, [req.session.userId], (err, rows) => {
-        if (err) return res.status(500).json({ message: 'Database error' });
+        if (err) {
+            console.error('DB error on candidate list:', err);
+            return res.status(500).json({ message: 'Database error' });
+        }
+        console.log('Candidates fetched successfully:', { count: rows.length });
         res.json(rows);
     });
 });
@@ -29,35 +34,51 @@ router.get('/', requireAuth, (req, res) => {
 // Invite a candidate (create candidate if not exists, create assessment, send email)
 router.post('/invite', requireAuth, async (req, res) => {
     const { name, email, test_id } = req.body;
+    console.log('Inviting candidate:', { name, email, test_id, userId: req.session.userId });
     if (!name || !email || !test_id) {
+        console.log('Invite candidate failed: Missing required fields');
         return res.status(400).json({ message: 'Missing required fields' });
     }
     try {
         // Check if candidate exists
         let candidate = await new Promise((resolve, reject) => {
             db.get('SELECT * FROM candidates WHERE email = ?', [email], (err, row) => {
-                if (err) reject(err);
-                resolve(row);
+                if (err) {
+                    console.error('DB error on candidate check:', err);
+                    reject(err);
+                } else {
+                    resolve(row);
+                }
             });
         });
         let candidateId;
         if (!candidate) {
-            // Create candidate
+            console.log('Creating new candidate:', { email });
             candidateId = await new Promise((resolve, reject) => {
                 db.run('INSERT INTO candidates (name, email) VALUES (?, ?)', [name, email], function(err) {
-                    if (err) reject(err);
-                    resolve(this.lastID);
+                    if (err) {
+                        console.error('DB error on candidate creation:', err);
+                        reject(err);
+                    } else {
+                        resolve(this.lastID);
+                    }
                 });
             });
         } else {
             candidateId = candidate.id;
+            console.log('Candidate already exists:', { candidateId });
         }
         // Create assessment
         const token = uuidv4();
+        console.log('Creating assessment for candidate:', { candidateId, test_id, token });
         await new Promise((resolve, reject) => {
             db.run('INSERT INTO assessments (test_id, candidate_id, token) VALUES (?, ?, ?)', [test_id, candidateId, token], function(err) {
-                if (err) reject(err);
-                resolve();
+                if (err) {
+                    console.error('DB error on assessment creation:', err);
+                    reject(err);
+                } else {
+                    resolve();
+                }
             });
         });
         // Send invitation email
@@ -71,12 +92,14 @@ router.post('/invite', requireAuth, async (req, res) => {
             }
         });
         const testUrl = `${process.env.FRONTEND_URL}/candidate-test.html?token=${token}`;
+        console.log('Sending invitation email to:', { email, testUrl });
         await transporter.sendMail({
             from: process.env.SMTP_FROM,
             to: email,
             subject: 'You have been invited to take a coding assessment',
             html: `<p>Hello ${name},</p><p>You have been invited to take a coding assessment. Click the link below to begin:</p><a href="${testUrl}">${testUrl}</a>`
         });
+        console.log('Invitation sent successfully');
         res.json({ message: 'Invitation sent' });
     } catch (error) {
         console.error('Invite error:', error);
@@ -86,6 +109,7 @@ router.post('/invite', requireAuth, async (req, res) => {
 
 // List all assessments for the logged-in user (with candidate and test info)
 router.get('/assessments', requireAuth, (req, res) => {
+    console.log('Fetching all assessments for userId:', req.session.userId);
     db.all(`
         SELECT a.*, c.name as candidate_name, c.email as candidate_email, t.name as test_name
         FROM assessments a
@@ -94,7 +118,11 @@ router.get('/assessments', requireAuth, (req, res) => {
         WHERE t.user_id = ?
         ORDER BY a.start_time DESC
     `, [req.session.userId], (err, rows) => {
-        if (err) return res.status(500).json({ message: 'Database error' });
+        if (err) {
+            console.error('DB error on assessment list:', err);
+            return res.status(500).json({ message: 'Database error' });
+        }
+        console.log('Assessments fetched successfully:', { count: rows.length });
         res.json(rows);
     });
 });
@@ -102,6 +130,7 @@ router.get('/assessments', requireAuth, (req, res) => {
 // Candidate: Get assessment by token (for test-taking)
 router.get('/take/:token', async (req, res) => {
     const { token } = req.params;
+    console.log('Fetching assessment by token:', { token });
     try {
         const assessment = await new Promise((resolve, reject) => {
             db.get(`
@@ -110,19 +139,31 @@ router.get('/take/:token', async (req, res) => {
                 JOIN tests t ON a.test_id = t.id
                 WHERE a.token = ?
             `, [token], (err, row) => {
-                if (err) reject(err);
-                resolve(row);
+                if (err) {
+                    console.error('DB error on assessment fetch:', err);
+                    reject(err);
+                } else {
+                    resolve(row);
+                }
             });
         });
-        if (!assessment) return res.status(404).json({ message: 'Invalid or expired link' });
+        if (!assessment) {
+            console.log('Assessment not found for token:', { token });
+            return res.status(404).json({ message: 'Invalid or expired link' });
+        }
         // Get test cases
         const testCases = await new Promise((resolve, reject) => {
             db.all('SELECT * FROM test_cases WHERE test_id = ?', [assessment.test_id], (err, rows) => {
-                if (err) reject(err);
-                resolve(rows);
+                if (err) {
+                    console.error('DB error on test cases fetch:', err);
+                    reject(err);
+                } else {
+                    resolve(rows);
+                }
             });
         });
         assessment.test_cases = testCases;
+        console.log('Assessment fetched successfully:', { assessmentId: assessment.id });
         res.json(assessment);
     } catch (error) {
         console.error('Assessment fetch error:', error);
@@ -134,17 +175,23 @@ router.get('/take/:token', async (req, res) => {
 router.post('/submit/:token', async (req, res) => {
     const { token } = req.params;
     const { status, score } = req.body;
+    console.log('Submitting assessment:', { token, status, score });
     try {
         await new Promise((resolve, reject) => {
             db.run(
                 'UPDATE assessments SET status = ?, score = ?, end_time = CURRENT_TIMESTAMP WHERE token = ?',
                 [status, score, token],
                 function(err) {
-                    if (err) reject(err);
-                    resolve();
+                    if (err) {
+                        console.error('DB error on assessment submission:', err);
+                        reject(err);
+                    } else {
+                        resolve();
+                    }
                 }
             );
         });
+        console.log('Assessment submitted successfully');
         res.json({ message: 'Assessment submitted' });
     } catch (error) {
         console.error('Assessment submit error:', error);
