@@ -1,6 +1,6 @@
 
 Table users {
-  id integer [pk, increment]
+  id integer [pk, increment, not null, unique]
   email text [unique, not null]
   password text [not null]
   company_name text [not null]
@@ -8,14 +8,15 @@ Table users {
 }
 
 Table candidates {
-  id integer [pk, increment]
+  id integer [pk, increment, not null, unique]
   name text [not null]
   email text [not null]
   created_at datetime [default: `CURRENT_TIMESTAMP`]
 }
 
 Table tests {
-  id integer [pk, increment]
+  // The entity representing the test that can be sent out to many candidates
+  id integer [pk, increment, not null, unique]
   user_id integer [ref: > users.id, not null]
   name text [not null]
   instructions text [not null]
@@ -25,7 +26,8 @@ Table tests {
 }
 
 Table assessments {
-  id integer [pk, increment]
+  // The entity representing the single instance of an assessment
+  id integer [pk, increment, not null, unique]
   test_id integer [ref: > tests.id, not null]
   candidate_id integer [ref: > candidates.id, not null]
   status text [default: 'NOT TAKEN']
@@ -34,4 +36,38 @@ Table assessments {
   score integer
   token text [unique, not null]
 }
+
+Table mc_questions {
+  id integer [pk, increment, not null, unique]
+  test_id integer [ref: > tests.id, not null]
+  question_text text [not null]
+  points integer [default: 1]
+}
+
+Table mc_options {
+  id integer [pk, increment, not null, unique]
+  is_correct bool [not null]
+  mc_question_id integer [ref: > mc_questions.id, not null]
+}
+
+Table freeform_questions {
+  id integer [pk, increment, not null, unique]
+  test_id integer [ref: > tests.id, not null]
+  question_text text [not null]
+  points integer [default: 1]
+}
+
+Table freeform_responses {
+  id integer [pk, increment, not null, unique]
+  freeform_question_id integer [ref: > freeform_questions.id, not null]
+  assessment_id integer [ref: > assessments.id, not null]
+}
+
+Table mc_responses {
+  id integer [pk, increment, not null, unique]
+  mc_option_id integer [ref: > mc_options.id, not null]
+  assessment_id integer [ref: > assessments.id, not null]
+}
+
+
 
