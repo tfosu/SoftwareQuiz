@@ -134,7 +134,7 @@ router.get('/take/:token', async (req, res) => {
     try {
         const assessment = await new Promise((resolve, reject) => {
             db.get(`
-                SELECT a.*, t.name as test_name, t.description, t.arg_names, t.time_limit
+                SELECT a.*, t.name as test_name, t.instructions, t.time_limit
                 FROM assessments a
                 JOIN tests t ON a.test_id = t.id
                 WHERE a.token = ?
@@ -151,19 +151,28 @@ router.get('/take/:token', async (req, res) => {
             console.log('Assessment not found for token:', { token });
             return res.status(404).json({ message: 'Invalid or expired link' });
         }
-        // Get test cases
-        const testCases = await new Promise((resolve, reject) => {
-            db.all('SELECT * FROM test_cases WHERE test_id = ?', [assessment.test_id], (err, rows) => {
-                if (err) {
-                    console.error('DB error on test cases fetch:', err);
-                    reject(err);
-                } else {
-                    resolve(rows);
-                }
+        // Get MC questions and options
+        const mcQuestions = await new Promise((resolve, reject) => {
+            db.all('SELECT * FROM mc_questions WHERE test_id = ?', [assessment.test_id], (err, questions) => {
+                if (err) return reject(err);
+                const promises = questions.map(q => new Promise((resolve2) => {
+                    db.all('SELECT * FROM mc_options WHERE mc_question_id = ?', [q.id], (err, options) => {
+                        q.options = options || [];
+                        resolve2(q);
+                    });
+                }));
+                Promise.all(promises).then(resolve);
             });
         });
-        assessment.test_cases = testCases;
-        console.log('Assessment fetched successfully:', { assessmentId: assessment.id });
+        // Get freeform questions
+        const freeformQuestions = await new Promise((resolve, reject) => {
+            db.all('SELECT * FROM freeform_questions WHERE test_id = ?', [assessment.test_id], (err, questions) => {
+                if (err) return reject(err);
+                resolve(questions);
+            });
+        });
+        assessment.mc_questions = mcQuestions;
+        assessment.freeform_questions = freeformQuestions;
         res.json(assessment);
     } catch (error) {
         console.error('Assessment fetch error:', error);
@@ -171,23 +180,53 @@ router.get('/take/:token', async (req, res) => {
     }
 });
 
-// Candidate: Submit assessment result (status, score, end_time)
+// Candidate: Submit assessment result (status, score, end_time, answers)
 router.post('/submit/:token', async (req, res) => {
     const { token } = req.params;
-    const { status, score } = req.body;
+    const { status, score, mc_answers, freeform_answers } = req.body;
     console.log('Submitting assessment:', { token, status, score });
     try {
+        // Get assessment id
+        const assessment = await new Promise((resolve, reject) => {
+            db.get('SELECT id FROM assessments WHERE token = ?', [token], (err, row) => {
+                if (err) return reject(err);
+                resolve(row);
+            });
+        });
+        if (!assessment) return res.status(404).json({ message: 'Assessment not found' });
+        const assessmentId = assessment.id;
+        // Store MC answers
+        if (Array.isArray(mc_answers)) {
+            for (const ans of mc_answers) {
+                // ans: { mc_option_id }
+                await new Promise((resolve, reject) => {
+                    db.run('INSERT INTO mc_responses (mc_option_id, assessment_id) VALUES (?, ?)', [ans.mc_option_id, assessmentId], (err) => {
+                        if (err) return reject(err);
+                        resolve();
+                    });
+                });
+            }
+        }
+        // Store freeform answers
+        if (Array.isArray(freeform_answers)) {
+            for (const ans of freeform_answers) {
+                // ans: { freeform_question_id, response_text }
+                await new Promise((resolve, reject) => {
+                    db.run('INSERT INTO freeform_responses (freeform_question_id, assessment_id) VALUES (?, ?)', [ans.freeform_question_id, assessmentId], (err) => {
+                        if (err) return reject(err);
+                        resolve();
+                    });
+                });
+            }
+        }
+        // Update assessment status/score
         await new Promise((resolve, reject) => {
             db.run(
                 'UPDATE assessments SET status = ?, score = ?, end_time = CURRENT_TIMESTAMP WHERE token = ?',
                 [status, score, token],
                 function(err) {
-                    if (err) {
-                        console.error('DB error on assessment submission:', err);
-                        reject(err);
-                    } else {
-                        resolve();
-                    }
+                    if (err) return reject(err);
+                    resolve();
                 }
             );
         });

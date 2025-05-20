@@ -49,30 +49,6 @@ function initializeDatabase() {
     `, logResult('tests'));
 
     db.run(`
-      CREATE TABLE IF NOT EXISTS questions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        test_id INTEGER NOT NULL,
-        question_text TEXT NOT NULL,
-        question_type TEXT NOT NULL, -- 'multiple_choice' or 'freeform'
-        points INTEGER NOT NULL DEFAULT 1,
-        order_index INTEGER NOT NULL, -- to maintain question order
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (test_id) REFERENCES tests(id) ON DELETE CASCADE
-      )
-    `, logResult('questions'));
-
-    db.run(`
-      CREATE TABLE IF NOT EXISTS multiple_choice_options (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        question_id INTEGER NOT NULL,
-        option_text TEXT NOT NULL,
-        is_correct BOOLEAN NOT NULL DEFAULT 0,
-        order_index INTEGER NOT NULL, -- to maintain option order
-        FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE
-      )
-    `, logResult('multiple_choice_options'));
-
-    db.run(`
       CREATE TABLE IF NOT EXISTS assessments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         test_id INTEGER NOT NULL,
@@ -88,21 +64,53 @@ function initializeDatabase() {
     `, logResult('assessments'));
 
     db.run(`
-      CREATE TABLE IF NOT EXISTS candidate_answers (
+      CREATE TABLE IF NOT EXISTS mc_questions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        assessment_id INTEGER NOT NULL,
-        question_id INTEGER NOT NULL,
-        answer_text TEXT,
-        selected_option_id INTEGER,
-        is_correct BOOLEAN,
-        points_earned INTEGER,
-        feedback TEXT,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (assessment_id) REFERENCES assessments(id) ON DELETE CASCADE,
-        FOREIGN KEY (question_id) REFERENCES questions(id),
-        FOREIGN KEY (selected_option_id) REFERENCES multiple_choice_options(id)
+        test_id INTEGER NOT NULL,
+        question_text TEXT NOT NULL,
+        points INTEGER DEFAULT 1,
+        FOREIGN KEY (test_id) REFERENCES tests(id)
       )
-    `, logResult('candidate_answers'));
+    `, logResult('mc_questions'));
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS mc_options (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        is_correct BOOLEAN NOT NULL,
+        mc_question_id INTEGER NOT NULL,
+        FOREIGN KEY (mc_question_id) REFERENCES mc_questions(id)
+      )
+    `, logResult('mc_options'));
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS freeform_questions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        test_id INTEGER NOT NULL,
+        question_text TEXT NOT NULL,
+        points INTEGER DEFAULT 1,
+        FOREIGN KEY (test_id) REFERENCES tests(id)
+      )
+    `, logResult('freeform_questions'));
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS freeform_responses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        freeform_question_id INTEGER NOT NULL,
+        assessment_id INTEGER NOT NULL,
+        FOREIGN KEY (freeform_question_id) REFERENCES freeform_questions(id),
+        FOREIGN KEY (assessment_id) REFERENCES assessments(id)
+      )
+    `, logResult('freeform_responses'));
+
+    db.run(`
+      CREATE TABLE IF NOT EXISTS mc_responses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        mc_option_id INTEGER NOT NULL,
+        assessment_id INTEGER NOT NULL,
+        FOREIGN KEY (mc_option_id) REFERENCES mc_options(id),
+        FOREIGN KEY (assessment_id) REFERENCES assessments(id)
+      )
+    `, logResult('mc_responses'));
 
     // Close the database after all tables are created
     db.close((err) => {
