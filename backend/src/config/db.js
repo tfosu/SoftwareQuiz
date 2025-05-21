@@ -43,8 +43,7 @@ function initializeDatabase() {
             user_id INTEGER NOT NULL,
             name TEXT NOT NULL,
             instructions TEXT NOT NULL,
-            time_limit INTEGER NOT NULL, -- in minutes
-            tests_code TEXT NOT NULL,
+            time_limit INTEGER,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id)
         )

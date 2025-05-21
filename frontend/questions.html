@@ -103,15 +103,17 @@
         await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
         window.location.href = '/login.html';
     };
-    // Load tests for dropdown
+
+    // Load tests for dropdown and for question listing
+    let allTests = [];
     async function loadTestOptions() {
         const select = document.getElementById('questionTest');
         select.innerHTML = '';
         try {
             const response = await fetch('/api/tests', { credentials: 'include' });
             if (!response.ok) throw new Error('Failed to load tests');
-            const tests = await response.json();
-            for (const t of tests) {
+            allTests = await response.json();
+            for (const t of allTests) {
                 const opt = document.createElement('option');
                 opt.value = t.id;
                 opt.textContent = t.name;
@@ -121,40 +123,66 @@
             select.innerHTML = '<option value="">Error loading tests</option>';
         }
     }
-    // Load all questions
+
+    // Load all questions for all tests, grouped by test and type
     async function loadQuestions() {
+        const questionsList = document.getElementById('questionsList');
+        questionsList.innerHTML = '<p>Loading...</p>';
         try {
-            const response = await fetch('/api/questions/all', { credentials: 'include' });
-            if (!response.ok) throw new Error('Failed to load questions');
-            const questions = await response.json();
-            const questionsList = document.getElementById('questionsList');
-            if (questions.length === 0) {
-                questionsList.innerHTML = '<p>No questions found. Create one!</p>';
+            // Fetch all tests
+            const testsResp = await fetch('/api/tests', { credentials: 'include' });
+            if (!testsResp.ok) throw new Error('Failed to load tests');
+            const tests = await testsResp.json();
+            if (tests.length === 0) {
+                questionsList.innerHTML = '<p>No tests found. Create a test first!</p>';
                 return;
             }
-            questionsList.innerHTML = questions.map(q => `
-                <div class="question-card">
-                    <h3>${q.question_text}</h3>
-                    <div class="question-meta">
-                        Test: ${q.test_name} | Type: ${q.question_type === 'multiple_choice' ? 'Multiple Choice' : 'Freeform'} | Points: ${q.points}
-                    </div>
-                    ${q.question_type === 'multiple_choice' ? renderOptions(q.options) : ''}
-                    <div class="question-actions">
-                        <button class="edit-btn" onclick="editQuestion(${q.id})">Edit</button>
-                        <button class="delete-btn" onclick="deleteQuestion(${q.id})">Delete</button>
-                    </div>
-                </div>
-            `).join('');
+            let html = '';
+            for (const test of tests) {
+                // Fetch questions for this test
+                const qResp = await fetch(`/api/questions/all/${test.id}`, { credentials: 'include' });
+                if (!qResp.ok) continue;
+                const grouped = await qResp.json();
+                html += `<div style="margin-bottom:2rem"><h2>${test.name}</h2>`;
+                // MC Questions
+                if (grouped.mc_questions && grouped.mc_questions.length > 0) {
+                    html += '<h3>Multiple Choice</h3>';
+                    for (const q of grouped.mc_questions) {
+                        html += `<div class="question-card">
+                            <h3>${q.question_text}</h3>
+                            <div class="question-meta">Points: ${q.points}</div>
+                            <div class="option-list">
+                                ${(q.options||[]).map(opt => `<div class="option-item">Option ID: ${opt.id} ${opt.is_correct ? '<span class=correct>(Correct)</span>' : ''}</div>`).join('')}
+                            </div>
+                            <div class="question-actions">
+                                <button class="edit-btn" onclick="editQuestion('mc',${q.id},${test.id})">Edit</button>
+                                <button class="delete-btn" onclick="deleteQuestion('mc',${q.id},${test.id})">Delete</button>
+                            </div>
+                        </div>`;
+                    }
+                }
+                // Freeform Questions
+                if (grouped.freeform_questions && grouped.freeform_questions.length > 0) {
+                    html += '<h3>Freeform</h3>';
+                    for (const q of grouped.freeform_questions) {
+                        html += `<div class="question-card">
+                            <h3>${q.question_text}</h3>
+                            <div class="question-meta">Points: ${q.points}</div>
+                            <div class="question-actions">
+                                <button class="edit-btn" onclick="editQuestion('freeform',${q.id},${test.id})">Edit</button>
+                                <button class="delete-btn" onclick="deleteQuestion('freeform',${q.id},${test.id})">Delete</button>
+                            </div>
+                        </div>`;
+                    }
+                }
+                html += '</div>';
+            }
+            questionsList.innerHTML = html;
         } catch (error) {
-            document.getElementById('questionsList').innerHTML = '<p>Error loading questions.</p>';
+            questionsList.innerHTML = '<p>Error loading questions.</p>';
         }
     }
-    function renderOptions(options) {
-        if (!options || options.length === 0) return '';
-        return `<div class="option-list">${options.map(opt => `
-            <div class="option-item">${opt.option_text} ${opt.is_correct ? '<span class="correct">(Correct)</span>' : ''}</div>
-        `).join('')}</div>`;
-    }
+
     // Show/Hide modal
     function showQuestionModal() {
         document.getElementById('questionForm').reset();
@@ -165,6 +193,8 @@
         loadTestOptions();
         toggleOptions();
         document.getElementById('questionModal').style.display = 'block';
+        window.editingQuestion = null;
+        window.editingType = null;
     }
     function hideQuestionModal() {
         document.getElementById('questionModal').style.display = 'none';
@@ -184,6 +214,7 @@
         `;
         optionsList.appendChild(div);
     }
+
     // Handle form submit
     document.getElementById('questionForm').addEventListener('submit', async function(event) {
         event.preventDefault();
@@ -194,7 +225,6 @@
         let options = [];
         if (question_type === 'multiple_choice') {
             options = Array.from(document.getElementById('optionsList').children).map(div => ({
-                option_text: div.querySelector('input[type="text"]').value,
                 is_correct: div.querySelector('.correctOpt').checked
             }));
             if (options.length < 2) {
@@ -206,10 +236,23 @@
                 return;
             }
         }
-        const body = JSON.stringify({ test_id, question_text, question_type, points, options });
+        let url, method, body;
+        if (window.editingQuestion) {
+            // Edit mode
+            url = `/api/questions/${window.editingType}/${window.editingQuestion}`;
+            method = 'PUT';
+            body = JSON.stringify({ question_text, points, options });
+        } else {
+            // Create mode
+            url = question_type === 'multiple_choice' ? '/api/questions/mc' : '/api/questions/freeform';
+            method = 'POST';
+            body = question_type === 'multiple_choice'
+                ? JSON.stringify({ test_id, question_text, points, options })
+                : JSON.stringify({ test_id, question_text, points });
+        }
         try {
-            const response = await fetch('/api/questions', {
-                method: 'POST',
+            const response = await fetch(url, {
+                method,
                 headers: { 'Content-Type': 'application/json' },
                 body,
                 credentials: 'include'
@@ -221,7 +264,52 @@
             alert('Error saving question: ' + error.message);
         }
     });
-    // Edit and delete logic can be added here as needed
+
+    // Edit and delete logic
+    window.editQuestion = function(type, id, testId) {
+        window.editingQuestion = id;
+        window.editingType = type;
+        document.getElementById('questionModalTitle').textContent = 'Edit Question';
+        document.getElementById('questionFormSubmitBtn').textContent = 'Save Changes';
+        // Load test options and set selected
+        loadTestOptions().then(() => {
+            document.getElementById('questionTest').value = testId;
+        });
+        // Set type
+        document.getElementById('questionType').value = type;
+        toggleOptions();
+        // Fetch question details
+        fetch(`/api/questions/${type}/${id}`, { credentials: 'include' })
+            .then(resp => resp.json())
+            .then(q => {
+                document.getElementById('questionText').value = q.question_text;
+                document.getElementById('questionPoints').value = q.points;
+                if (type === 'multiple_choice') {
+                    const optionsList = document.getElementById('optionsList');
+                    optionsList.innerHTML = '';
+                    (q.options||[]).forEach(opt => {
+                        const div = document.createElement('div');
+                        div.className = 'option-item';
+                        div.innerHTML = `
+                            <input type="text" value="Option" required>
+                            <label><input type="checkbox" class="correctOpt" ${opt.is_correct ? 'checked' : ''}> Correct</label>
+                            <button type="button" onclick="this.parentElement.remove()">Remove</button>
+                        `;
+                        optionsList.appendChild(div);
+                    });
+                }
+                document.getElementById('questionModal').style.display = 'block';
+            });
+    };
+    window.deleteQuestion = async function(type, id, testId) {
+        if (!confirm('Are you sure you want to delete this question?')) return;
+        try {
+            await fetch(`/api/questions/${type}/${id}`, { method: 'DELETE', credentials: 'include' });
+            loadQuestions();
+        } catch (error) {
+            alert('Error deleting question: ' + error.message);
+        }
+    };
     // Initial load
     loadQuestions();
     </script>

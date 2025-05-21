@@ -12,6 +12,7 @@ const authRouter = require('./routes/auth');
 const quizRouter = require('./routes/quizzes');
 const testsRouter = require('./routes/tests');
 const candidatesRouter = require('./routes/candidates');
+const questionsRouter = require('./routes/questions');
 
 const app = express();
 
@@ -29,9 +30,9 @@ app.use(session({
         db: 'sessions.db',
         dir: './db'
     }),
-    secret: process.env.SESSION_SECRET || 'dev-secret',
-    resave: false,
-    saveUninitialized: false,
+  secret: process.env.SESSION_SECRET || 'dev-secret',
+  resave: false,
+  saveUninitialized: false,
     cookie: {
         secure: process.env.NODE_ENV === 'production',
         httpOnly: true,
@@ -44,6 +45,8 @@ app.use('/api/auth', authRouter);
 app.use('/api/quizzes', quizRouter);
 app.use('/api/tests', testsRouter);
 app.use('/api/candidates', candidatesRouter);
+app.use('/api/questions', questionsRouter);
+app.use('/api/invite', inviteRouter);
 
 // Serve frontend
 app.get('/', (req, res) => {
@@ -78,8 +81,12 @@ app.use((err, req, res, next) => {
     res.status(500).json({ message: 'Something went wrong!' });
 });
 
-// 9) Start server
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+// Only start the server if this file is run directly
+if (require.main === module) {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
-});
+  });
+}
+
+module.exports = app;

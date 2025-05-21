@@ -20,8 +20,7 @@ Table tests {
   user_id integer [ref: > users.id, not null]
   name text [not null]
   instructions text [not null]
-  time_limit integer [not null]
-  tests_code text [not null]
+  time_limit integer
   created_at datetime [default: `CURRENT_TIMESTAMP`]
 }
 

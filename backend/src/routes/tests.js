@@ -40,8 +40,8 @@ router.get('/:id', requireAuth, (req, res) => {
                 return res.status(500).json({ message: 'Database error' });
             }
             if (!test) {
-                console.log('Test not found:', { testId, userId: req.session.userId });
-                return res.status(404).json({ message: 'Test not found' });
+                console.log('Test not found (404):', { testId, userId: req.session.userId, params: req.params, query: req.query, body: req.body });
+                return res.status(404).json({ message: 'Test not found', testId, userId: req.session.userId });
             }
             console.log('Test fetched successfully:', { testId });
             res.json(test);
@@ -51,19 +51,19 @@ router.get('/:id', requireAuth, (req, res) => {
 
 // Create a new test
 router.post('/', requireAuth, (req, res) => {
-    const { name, instructions, time_limit, tests_code } = req.body;
-    console.log('Creating test:', { name, userId: req.session.userId });
-    if (!name || !instructions || !time_limit || !tests_code) {
-        console.log('Create test failed: Missing required fields');
-        return res.status(400).json({ message: 'Missing required fields' });
+    const { name, instructions, time_limit } = req.body;
+    console.log('Creating test:', { name, instructions, time_limit, userId: req.session.userId, body: req.body });
+    if (!name || !instructions || !time_limit) {
+        console.log('Create test failed: Missing required fields', req.body);
+        return res.status(400).json({ message: 'Missing required fields', body: req.body });
     }
     db.run(
-        'INSERT INTO tests (user_id, name, instructions, time_limit, tests_code) VALUES (?, ?, ?, ?, ?)',
-        [req.session.userId, name, instructions, time_limit, tests_code],
+        'INSERT INTO tests (user_id, name, instructions, time_limit) VALUES (?, ?, ?, ?)',
+        [req.session.userId, name, instructions, time_limit],
         function (err) {
             if (err) {
-                console.error('DB error on test creation:', err);
-                return res.status(500).json({ message: 'Database error' });
+                console.error('DB error on test creation:', err, 'Request body:', req.body);
+                return res.status(500).json({ message: 'Database error on test creation', error: err.message, body: req.body });
             }
             console.log('Test created successfully:', { testId: this.lastID });
             res.status(201).json({ id: this.lastID });
@@ -74,23 +74,23 @@ router.post('/', requireAuth, (req, res) => {
 // Update a test
 router.put('/:id', requireAuth, (req, res) => {
     const testId = req.params.id;
-    const { name, instructions, time_limit, tests_code } = req.body;
-    console.log('Updating test:', { testId, userId: req.session.userId });
-    if (!name || !instructions || !time_limit || !tests_code) {
-        console.log('Update test failed: Missing required fields');
-        return res.status(400).json({ message: 'Missing required fields' });
+    const { name, instructions, time_limit } = req.body;
+    console.log('Updating test:', { testId, name, instructions, time_limit, userId: req.session.userId, body: req.body });
+    if (!name || !instructions || !time_limit) {
+        console.log('Update test failed: Missing required fields', req.body);
+        return res.status(400).json({ message: 'Missing required fields', body: req.body });
     }
     db.run(
-        'UPDATE tests SET name = ?, instructions = ?, time_limit = ?, tests_code = ? WHERE id = ? AND user_id = ?',
-        [name, instructions, time_limit, tests_code, testId, req.session.userId],
+        'UPDATE tests SET name = ?, instructions = ?, time_limit = ? WHERE id = ? AND user_id = ?',
+        [name, instructions, time_limit, testId, req.session.userId],
         function (err) {
             if (err) {
-                console.error('DB error on test update:', err);
-                return res.status(500).json({ message: 'Database error' });
+                console.error('DB error on test update:', err, 'Request body:', req.body);
+                return res.status(500).json({ message: 'Database error on test update', error: err.message, body: req.body });
             }
             if (this.changes === 0) {
-                console.log('Test not found for update:', { testId, userId: req.session.userId });
-                return res.status(404).json({ message: 'Test not found' });
+                console.log('Test not found for update (404):', { testId, userId: req.session.userId, params: req.params, query: req.query, body: req.body });
+                return res.status(404).json({ message: 'Test not found', testId, userId: req.session.userId });
             }
             console.log('Test updated successfully:', { testId });
             res.json({ message: 'Test updated' });

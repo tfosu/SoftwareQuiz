@@ -49,7 +49,7 @@
     <main class="container">
         <div class="dashboard-header">
             <h1>Your Tests</h1>
-            <a class="create-quiz-btn" href="create-test.html">Create New Test</a>
+            <button class="create-quiz-btn" onclick="showCreateTestModal()">Create New Test</button>
         </div>
         <div id="testsList"></div>
     </main>
@@ -72,10 +72,6 @@
                 <div class="form-group">
                     <label for="testTimeLimit">Time Limit (minutes)</label>
                     <input type="number" id="testTimeLimit" min="1" value="30" required>
-                </div>
-                <div class="form-group">
-                    <label for="testCode">Tests (JavaScript code that will run as tests)</label>
-                    <textarea id="testCode" rows="8" required placeholder="// Example:\nexpect(solution(1,2)).toBe(3);\nexpect(solution(5,5)).toBe(10);\n// ..."></textarea>
                 </div>
                 <button type="submit" class="create-quiz-btn" id="testFormSubmitBtn">Create Test</button>
             </form>
@@ -112,12 +108,11 @@
             testsList.innerHTML = tests.map(test => `
                 <div class="quiz-card">
                     <h3>${test.name}</h3>
-                    <p>${test.description || ''}</p>
                     <div class="quiz-stats">
                         <span>${test.time_limit} min</span>
                     </div>
                     <div class="quiz-actions">
-                        <a class="edit-btn" href="create-test.html?edit=${test.id}">Edit</a>
+                        <button class="edit-btn" onclick="editTest(${test.id})">Edit</button>
                         <button class="delete-btn" onclick="deleteTest(${test.id})">Delete</button>
                     </div>
                 </div>
@@ -134,7 +129,6 @@
         document.getElementById('testName').value = '';
         document.getElementById('testInstructions').value = '';
         document.getElementById('testTimeLimit').value = 30;
-        document.getElementById('testCode').value = '';
         document.getElementById('testModal').style.display = 'block';
     }
     function hideTestModal() {
@@ -146,12 +140,11 @@
         const name = document.getElementById('testName').value;
         const instructions = document.getElementById('testInstructions').value;
         const timeLimit = parseInt(document.getElementById('testTimeLimit').value);
-        const testsCode = document.getElementById('testCode').value;
-        if (!name || !instructions || !timeLimit || !testsCode) {
+        if (!name || !instructions || !timeLimit) {
             alert('Please fill in all fields.');
             return;
         }
-        const body = JSON.stringify({ name, instructions, time_limit: timeLimit, tests_code: testsCode });
+        const body = JSON.stringify({ name, instructions, time_limit: timeLimit });
         try {
             let response;
             if (editingTestId) {
@@ -178,7 +171,7 @@
     }
     document.getElementById('testForm').addEventListener('submit', handleTestFormSubmit);
     // Edit test
-    async function editTest(id) {
+    window.editTest = async function(id) {
         try {
             const response = await fetch(`/api/tests/${id}`, { credentials: 'include' });
             if (!response.ok) throw new Error('Failed to load test');
@@ -196,7 +189,7 @@
         }
     }
     // Delete test
-    async function deleteTest(id) {
+    window.deleteTest = async function(id) {
         if (!confirm('Are you sure you want to delete this test?')) return;
         try {
             const response = await fetch(`/api/tests/${id}`, {
