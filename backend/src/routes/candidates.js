@@ -36,52 +36,66 @@ router.post('/invite', requireAuth, async (req, res) => {
     const { name, email, test_id } = req.body;
     console.log('Inviting candidate:', { name, email, test_id, userId: req.session.userId });
     if (!name || !email || !test_id) {
-        console.log('Invite candidate failed: Missing required fields');
-        return res.status(400).json({ message: 'Missing required fields' });
+        console.log('Invite candidate failed: Missing required fields', req.body);
+        return res.status(400).json({ message: 'Missing required fields', body: req.body });
     }
+    let candidate;
+    let candidateId;
+    let token;
     try {
         // Check if candidate exists
-        let candidate = await new Promise((resolve, reject) => {
+        candidate = await new Promise((resolve, reject) => {
             db.get('SELECT * FROM candidates WHERE email = ?', [email], (err, row) => {
                 if (err) {
-                    console.error('DB error on candidate check:', err);
-                    reject(err);
-                } else {
-                    resolve(row);
+                    console.error('DB error on candidate check:', err, { email });
+                    return reject({ step: 'candidate_check', error: err.message, email });
                 }
+                resolve(row);
             });
         });
-        let candidateId;
+    } catch (error) {
+        console.error('Error during candidate lookup:', error);
+        return res.status(500).json({ message: 'Database error during candidate lookup', error });
+    }
+    try {
         if (!candidate) {
             console.log('Creating new candidate:', { email });
             candidateId = await new Promise((resolve, reject) => {
                 db.run('INSERT INTO candidates (name, email) VALUES (?, ?)', [name, email], function(err) {
                     if (err) {
-                        console.error('DB error on candidate creation:', err);
-                        reject(err);
-                    } else {
-                        resolve(this.lastID);
+                        console.error('DB error on candidate creation:', err, { name, email });
+                        return reject({ step: 'candidate_creation', error: err.message, name, email });
                     }
+                    resolve(this.lastID);
                 });
             });
         } else {
             candidateId = candidate.id;
             console.log('Candidate already exists:', { candidateId });
         }
+    } catch (error) {
+        console.error('Error during candidate creation:', error);
+        return res.status(500).json({ message: 'Database error during candidate creation', error });
+    }
+    try {
         // Create assessment
-        const token = uuidv4();
+        token = uuidv4();
         console.log('Creating assessment for candidate:', { candidateId, test_id, token });
         await new Promise((resolve, reject) => {
             db.run('INSERT INTO assessments (test_id, candidate_id, token) VALUES (?, ?, ?)', [test_id, candidateId, token], function(err) {
                 if (err) {
-                    console.error('DB error on assessment creation:', err);
-                    reject(err);
-                } else {
-                    resolve();
+                    console.error('DB error on assessment creation:', err, { candidateId, test_id, token });
+                    return reject({ step: 'assessment_creation', error: err.message, candidateId, test_id, token });
                 }
+                resolve();
             });
         });
-        // Send invitation email
+    } catch (error) {
+        console.error('Error during assessment creation:', error);
+        return res.status(500).json({ message: 'Database error during assessment creation', error });
+    }
+    // Send invitation email
+    try {
         const transporter = nodemailer.createTransport({
             host: process.env.SMTP_HOST,
             port: process.env.SMTP_PORT,
@@ -92,18 +106,32 @@ router.post('/invite', requireAuth, async (req, res) => {
             }
         });
         const testUrl = `${process.env.FRONTEND_URL}/candidate-test.html?token=${token}`;
-        console.log('Sending invitation email to:', { email, testUrl });
-        await transporter.sendMail({
+        const mailOptions = {
             from: process.env.SMTP_FROM,
             to: email,
             subject: 'You have been invited to take a coding assessment',
-            html: `<p>Hello ${name},</p><p>You have been invited to take a coding assessment. Click the link below to begin:</p><a href="${testUrl}">${testUrl}</a>`
-        });
+            html: `
+                <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;background:#f9f9f9;border-radius:8px;">
+                    <h2 style="color:#2c3e50;">SoftwareQuiz Assessment Invitation</h2>
+                    <p>Hello <b>${name}</b>,</p>
+                    <p>You have been invited to take a coding assessment. Click the button below to begin:</p>
+                    <p style="text-align:center;margin:30px 0;">
+                        <a href="${testUrl}" style="background:#3498db;color:#fff;padding:12px 24px;border-radius:4px;text-decoration:none;font-weight:bold;">Start Assessment</a>
+                    </p>
+                    <p>If the button doesn't work, copy and paste this link into your browser:</p>
+                    <p style="word-break:break-all;"><a href="${testUrl}">${testUrl}</a></p>
+                    <hr style="margin:30px 0;">
+                    <p style="font-size:0.9em;color:#888;">If you did not expect this email, you can ignore it.</p>
+                </div>
+            `
+        };
+        console.log('Sending invitation email to:', { email, testUrl });
+        await transporter.sendMail(mailOptions);
         console.log('Invitation sent successfully');
-        res.json({ message: 'Invitation sent' });
+        res.json({ message: 'Invitation sent', email, testUrl });
     } catch (error) {
-        console.error('Invite error:', error);
-        res.status(500).json({ message: 'Failed to invite candidate' });
+        console.error('Error sending invitation email:', error, { email, token });
+        return res.status(500).json({ message: 'Failed to send invitation email', error: error.message, email, token });
     }
 });
 

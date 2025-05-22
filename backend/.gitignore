@@ -1,3 +1,4 @@
 .env
 db/sessions.db
 database.sqlite
+!.env.example
