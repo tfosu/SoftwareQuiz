@@ -33,59 +33,70 @@
             <div class="test-desc" id="testDesc"></div>
             <div class="timer" id="timer">Time Remaining: --:--</div>
         </div>
-        <div class="editor-label">Implement the function:</div>
-        <pre id="functionSignature" style="background:#f8f8f8;padding:10px;border-radius:4px;"></pre>
-        <textarea id="codeEditor" spellcheck="false"></textarea>
-        <button class="run-btn" onclick="runTests()">Run Tests</button>
-        <button class="submit-btn" id="submitBtn" onclick="submitAssessment()">Submit</button>
+        <form id="quizForm">
+            <div id="questionsContainer"></div>
+            <button class="submit-btn" id="submitBtn" type="submit">Submit</button>
+        </form>
         <div class="result-msg" id="resultMsg"></div>
-        <div class="test-cases" id="testCasesContainer"></div>
     </div>
     <script>
     let assessment = null;
     let timeLeft = 0;
     let timerInterval = null;
-    let testResults = [];
     let submitted = false;
 
     // Get token from URL
     const urlParams = new URLSearchParams(window.location.search);
     const token = urlParams.get('token');
     if (!token) {
-        alert('Invalid assessment link');
-        window.location.href = '/';
+        showError('Invalid assessment link. No token provided.');
     }
 
-    // Load assessment
     async function loadAssessment() {
         try {
             const response = await fetch(`/api/candidates/take/${token}`);
-            if (!response.ok) throw new Error('Failed to load assessment');
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.message || 'Failed to load assessment');
+            }
             assessment = await response.json();
-            document.getElementById('testTitle').textContent = assessment.test_name;
-            document.getElementById('testDesc').textContent = assessment.description;
-            document.getElementById('functionSignature').textContent =
-                `function solution(${JSON.parse(assessment.arg_names).join(', ')}) {\n    // your code here\n}`;
-            document.getElementById('codeEditor').value =
-                `function solution(${JSON.parse(assessment.arg_names).join(', ')}) {\n    // your code here\n}`;
-            timeLeft = assessment.time_limit * 60;
+            document.getElementById('testTitle').textContent = assessment.test_name || 'Assessment';
+            document.getElementById('testDesc').textContent = assessment.instructions || '';
+            timeLeft = (assessment.time_limit || 30) * 60;
             startTimer();
-            renderTestCases();
+            renderQuestions();
         } catch (error) {
-            alert('Failed to load assessment.');
-            window.location.href = '/';
+            showError('Failed to load assessment: ' + error.message);
         }
     }
 
-    function renderTestCases() {
-        const container = document.getElementById('testCasesContainer');
-        container.innerHTML = '<h3>Test Cases</h3>' + assessment.test_cases.map((tc, i) => `
-            <div class="test-case-row" id="tcrow${i}">
-                <span>Input: <code>${Object.entries(JSON.parse(tc.args_vals)).map(([k,v]) => `${k}: ${JSON.stringify(v)}`).join(', ')}</code></span>
-                <span>Expected: <code>${tc.expected_val}</code></span>
-                <span class="test-case-status" id="tcstatus${i}"></span>
-            </div>
-        `).join('');
+    function renderQuestions() {
+        const container = document.getElementById('questionsContainer');
+        if (!assessment) return showError('No assessment loaded.');
+        let html = '';
+        // MC Questions
+        if (assessment.mc_questions && assessment.mc_questions.length > 0) {
+            html += '<h2>Multiple Choice Questions</h2>';
+            assessment.mc_questions.forEach((q, i) => {
+                html += `<div class="question-block"><div><b>Q${i+1}:</b> ${q.question_text}</div>`;
+                if (q.options && q.options.length > 0) {
+                    q.options.forEach((opt, j) => {
+                        html += `<div><label><input type="radio" name="mc_${q.id}" value="${opt.id}"> ${opt.is_correct ? '' : ''}${opt.option_text}</label></div>`;
+                    });
+                }
+                html += '</div>';
+            });
+        }
+        // Freeform Questions
+        if (assessment.freeform_questions && assessment.freeform_questions.length > 0) {
+            html += '<h2>Freeform Questions</h2>';
+            assessment.freeform_questions.forEach((q, i) => {
+                html += `<div class="question-block"><div><b>Q${i+1}:</b> ${q.question_text}</div>`;
+                html += `<textarea name="freeform_${q.id}" rows="4" style="width:100%;margin-top:8px;"></textarea></div>`;
+            });
+        }
+        if (!html) html = '<p>No questions found for this assessment.</p>';
+        container.innerHTML = html;
     }
 
     function startTimer() {
@@ -105,57 +116,63 @@
         document.getElementById('timer').textContent = `Time Remaining: ${min.toString().padStart(2,'0')}:${sec.toString().padStart(2,'0')}`;
     }
 
-    function runTests() {
-        if (!assessment) return;
-        const code = document.getElementById('codeEditor').value;
-        testResults = [];
-        let allPass = true;
-        for (let i = 0; i < assessment.test_cases.length; i++) {
-            const tc = assessment.test_cases[i];
-            let result, pass = false, error = null;
-            try {
-                // eslint-disable-next-line no-new-func
-                const func = new Function(code + `\nreturn solution;`)();
-                const args = JSON.parse(tc.args_vals);
-                const output = func(...Object.values(args));
-                pass = output === tc.expected_val;
-                result = output;
-            } catch (e) {
-                error = e.message;
-                pass = false;
-                allPass = false;
-            }
-            testResults[i] = pass;
-            document.getElementById('tcstatus'+i).textContent = pass ? 'PASS' : (error ? 'ERROR' : 'FAIL');
-            document.getElementById('tcstatus'+i).className = 'test-case-status ' + (pass ? 'pass' : 'fail');
-            if (error) document.getElementById('tcstatus'+i).title = error;
-            if (!pass) allPass = false;
-        }
-        document.getElementById('resultMsg').textContent = allPass ? 'All test cases passed!' : 'Some test cases failed.';
-        return allPass;
+    function showError(msg) {
+        document.getElementById('resultMsg').textContent = msg;
+        document.getElementById('resultMsg').style.color = '#e74c3c';
+        document.getElementById('submitBtn').disabled = true;
+        throw new Error(msg);
     }
 
-    async function submitAssessment() {
+    document.getElementById('quizForm').addEventListener('submit', async function(event) {
+        event.preventDefault();
         if (submitted) return;
         submitted = true;
         clearInterval(timerInterval);
         document.getElementById('submitBtn').disabled = true;
-        const allPass = runTests();
-        let score = 0;
-        if (assessment && assessment.test_cases) {
-            score = testResults.filter(Boolean).length / assessment.test_cases.length * 100;
-        }
         try {
-            await fetch(`/api/candidates/submit/${token}`, {
+            // Collect MC answers
+            const mc_answers = [];
+            if (assessment.mc_questions) {
+                for (const q of assessment.mc_questions) {
+                    const selected = document.querySelector(`input[name="mc_${q.id}"]:checked`);
+                    if (selected) {
+                        mc_answers.push({ mc_option_id: parseInt(selected.value) });
+                    } else {
+                        showError(`You must answer all multiple choice questions. Missing Q: ${q.question_text}`);
+                        return;
+                    }
+                }
+            }
+            // Collect freeform answers
+            const freeform_answers = [];
+            if (assessment.freeform_questions) {
+                for (const q of assessment.freeform_questions) {
+                    const textarea = document.querySelector(`textarea[name="freeform_${q.id}"]`);
+                    if (textarea && textarea.value.trim()) {
+                        freeform_answers.push({ freeform_question_id: q.id, response_text: textarea.value.trim() });
+                    } else {
+                        showError(`You must answer all freeform questions. Missing Q: ${q.question_text}`);
+                        return;
+                    }
+                }
+            }
+            // Submit answers
+            const response = await fetch(`/api/candidates/submit/${token}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: allPass ? 'PASS' : 'FAIL', score: Math.round(score) })
+                body: JSON.stringify({ status: 'SUBMITTED', score: 0, mc_answers, freeform_answers })
             });
-            document.getElementById('resultMsg').textContent = allPass ? 'Assessment submitted! You passed!' : 'Assessment submitted. You did not pass.';
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                showError('Error submitting assessment: ' + (err.message || response.status));
+                return;
+            }
+            document.getElementById('resultMsg').textContent = 'Assessment submitted successfully!';
+            document.getElementById('resultMsg').style.color = '#27ae60';
         } catch (error) {
-            document.getElementById('resultMsg').textContent = 'Error submitting assessment.';
+            showError('Error submitting assessment: ' + error.message);
         }
-    }
+    });
 
     loadAssessment();
     </script>
