@@ -88,6 +88,7 @@ function initializeDatabase() {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             is_correct BOOLEAN NOT NULL,
             mc_question_id INTEGER NOT NULL,
+            option_text TEXT NOT NULL,
             FOREIGN KEY (mc_question_id) REFERENCES mc_questions(id)
         )
     `);

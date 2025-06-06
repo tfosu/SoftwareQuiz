@@ -20,7 +20,8 @@ Table tests {
   user_id integer [ref: > users.id, not null]
   name text [not null]
   instructions text [not null]
-  time_limit integer
+  time_limit integer [not null]
+  tests_code text [not null]
   created_at datetime [default: `CURRENT_TIMESTAMP`]
 }
 
@@ -46,6 +47,7 @@ Table mc_questions {
 Table mc_options {
   id integer [pk, increment, not null, unique]
   is_correct bool [not null]
+  option_text text [not null]
   mc_question_id integer [ref: > mc_questions.id, not null]
 }
 
@@ -59,6 +61,7 @@ Table freeform_questions {
 Table freeform_responses {
   id integer [pk, increment, not null, unique]
   freeform_question_id integer [ref: > freeform_questions.id, not null]
+  response_text text [not null]
   assessment_id integer [ref: > assessments.id, not null]
 }
 

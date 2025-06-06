@@ -17,9 +17,9 @@ router.post('/mc', authenticateToken, (req, res) => {
             if (err) return res.status(500).json({ error: 'Failed to create MC question' });
             const mc_question_id = this.lastID;
             // Insert options
-            const stmt = db.prepare('INSERT INTO mc_options (is_correct, mc_question_id) VALUES (?, ?)');
+            const stmt = db.prepare('INSERT INTO mc_options (is_correct, mc_question_id, option_text) VALUES (?, ?, ?)');
             for (const opt of options) {
-                stmt.run(opt.is_correct ? 1 : 0, mc_question_id);
+                stmt.run(opt.is_correct ? 1 : 0, mc_question_id, opt.option_text);
             }
             stmt.finalize((err) => {
                 if (err) return res.status(500).json({ error: 'Failed to create MC options' });
@@ -50,9 +50,9 @@ router.put('/mc/:id', authenticateToken, (req, res) => {
         if (options) {
             db.run('DELETE FROM mc_options WHERE mc_question_id = ?', [req.params.id], (err) => {
                 if (err) return res.status(500).json({ error: 'Failed to update MC options' });
-                const stmt = db.prepare('INSERT INTO mc_options (is_correct, mc_question_id) VALUES (?, ?)');
+                const stmt = db.prepare('INSERT INTO mc_options (is_correct, mc_question_id, option_text) VALUES (?, ?, ?)');
                 for (const opt of options) {
-                    stmt.run(opt.is_correct ? 1 : 0, req.params.id);
+                    stmt.run(opt.is_correct ? 1 : 0, req.params.id, opt.option_text);
                 }
                 stmt.finalize((err) => {
                     if (err) return res.status(500).json({ error: 'Failed to update MC options' });

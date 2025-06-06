@@ -152,7 +152,7 @@
                             <h3>${q.question_text}</h3>
                             <div class="question-meta">Points: ${q.points}</div>
                             <div class="option-list">
-                                ${(q.options||[]).map(opt => `<div class="option-item">Option ID: ${opt.id} ${opt.is_correct ? '<span class=correct>(Correct)</span>' : ''}</div>`).join('')}
+                                ${(q.options||[]).map(opt => `<div class="option-item">${opt.option_text} ${opt.is_correct ? '<span class=correct>(Correct)</span>' : ''}</div>`).join('')}
                             </div>
                             <div class="question-actions">
                                 <button class="edit-btn" onclick="editQuestion('mc',${q.id},${test.id})">Edit</button>
@@ -225,6 +225,7 @@
         let options = [];
         if (question_type === 'multiple_choice') {
             options = Array.from(document.getElementById('optionsList').children).map(div => ({
+                option_text: div.querySelector('input[type="text"]').value,
                 is_correct: div.querySelector('.correctOpt').checked
             }));
             if (options.length < 2) {

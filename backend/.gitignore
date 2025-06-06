@@ -2,3 +2,4 @@
 db/sessions.db
 database.sqlite
 !.env.example
+*.sh
