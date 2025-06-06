@@ -52,21 +52,46 @@
         showError('Invalid assessment link. No token provided.');
     }
 
+    // Add error logging function
+    function logError(error, context) {
+        console.error('Error in candidate test page:', {
+            error: error.message,
+            context,
+            timestamp: new Date().toISOString(),
+            stack: error.stack
+        });
+    }
+
+    // Add success logging function
+    function logSuccess(action, data) {
+        console.log('Success in candidate test page:', {
+            action,
+            data,
+            timestamp: new Date().toISOString()
+        });
+    }
+
     async function loadAssessment() {
         try {
-            const response = await fetch(`/api/candidates/take/${token}`);
+            const token = getToken();
+            logSuccess('Loading assessment', { token });
+
+            const response = await fetch(`/api/assessments/${token}`);
             if (!response.ok) {
-                const err = await response.json().catch(() => ({}));
-                throw new Error(err.message || 'Failed to load assessment');
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
-            assessment = await response.json();
-            document.getElementById('testTitle').textContent = assessment.test_name || 'Assessment';
-            document.getElementById('testDesc').textContent = assessment.instructions || '';
-            timeLeft = (assessment.time_limit || 30) * 60;
-            startTimer();
-            renderQuestions();
+
+            const assessment = await response.json();
+            logSuccess('Assessment loaded', { 
+                assessmentId: assessment.id,
+                testName: assessment.test_name
+            });
+
+            return assessment;
         } catch (error) {
-            showError('Failed to load assessment: ' + error.message);
+            logError(error, 'loadAssessment');
+            showError('Failed to load assessment. Please try again later.');
+            throw error;
         }
     }
 

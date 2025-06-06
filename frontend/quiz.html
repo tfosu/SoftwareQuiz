@@ -252,9 +252,29 @@
             window.location.href = '/';
         }
 
+        // Add error logging function
+        function logError(error, context) {
+            console.error('Error in quiz page:', {
+                error: error.message,
+                context,
+                timestamp: new Date().toISOString(),
+                stack: error.stack
+            });
+        }
+
+        // Add success logging function
+        function logSuccess(action, data) {
+            console.log('Success in quiz page:', {
+                action,
+                data,
+                timestamp: new Date().toISOString()
+            });
+        }
+
         // Load quiz
         async function loadQuiz() {
             try {
+                logSuccess('Loading quiz', { token });
                 const response = await fetch(`/api/quizzes/take/${token}`);
                 if (!response.ok) throw new Error('Failed to load quiz');
                 
@@ -267,7 +287,7 @@
                 startTimer();
                 showQuestion(0);
             } catch (error) {
-                console.error('Failed to load quiz:', error);
+                logError(error, 'loadQuiz');
                 alert('Failed to load quiz. Please try again.');
             }
         }
@@ -385,7 +405,7 @@
                 alert('Quiz submitted successfully!');
                 window.location.href = '/';
             } catch (error) {
-                console.error('Failed to submit quiz:', error);
+                logError(error, 'submitQuiz');
                 alert('Failed to submit quiz. Please try again.');
             }
         }
