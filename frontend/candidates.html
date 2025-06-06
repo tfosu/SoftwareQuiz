@@ -123,7 +123,7 @@
                             ${c.assessments.length === 0 ? '<li>None</li>' : c.assessments.map(a => `
                                 <li>
                                     Test ID: ${a.test_id} | Status: <b>${a.status || 'NOT TAKEN'}</b>
-                                    ${a.score !== null && a.score !== undefined ? `| Score: ${a.score}` : ''}
+                                    ${a.score !== null && a.score !== undefined ? `| Score: ${a.score}%` : ''}
                                     ${a.start_time ? `| Started: ${a.start_time}` : ''}
                                     ${a.end_time ? `| Ended: ${a.end_time}` : ''}
                                 </li>

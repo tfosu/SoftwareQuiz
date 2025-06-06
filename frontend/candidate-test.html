@@ -161,7 +161,10 @@
                 for (const q of assessment.mc_questions) {
                     const selected = document.querySelector(`input[name="mc_${q.id}"]:checked`);
                     if (selected) {
-                        mc_answers.push({ mc_option_id: parseInt(selected.value) });
+                        mc_answers.push({ 
+                            mc_question_id: q.id,
+                            mc_option_id: parseInt(selected.value) 
+                        });
                     } else {
                         showError(`You must answer all multiple choice questions. Missing Q: ${q.question_text}`);
                         return;
@@ -174,7 +177,10 @@
                 for (const q of assessment.freeform_questions) {
                     const textarea = document.querySelector(`textarea[name="freeform_${q.id}"]`);
                     if (textarea && textarea.value.trim()) {
-                        freeform_answers.push({ freeform_question_id: q.id, response_text: textarea.value.trim() });
+                        freeform_answers.push({ 
+                            freeform_question_id: q.id, 
+                            response_text: textarea.value.trim() 
+                        });
                     } else {
                         showError(`You must answer all freeform questions. Missing Q: ${q.question_text}`);
                         return;
@@ -185,15 +191,20 @@
             const response = await fetch(`/api/candidates/submit/${token}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ status: 'SUBMITTED', score: 0, mc_answers, freeform_answers })
+                body: JSON.stringify({ status: 'SUBMITTED', mc_answers, freeform_answers })
             });
             if (!response.ok) {
                 const err = await response.json().catch(() => ({}));
                 showError('Error submitting assessment: ' + (err.message || response.status));
                 return;
             }
-            document.getElementById('resultMsg').textContent = 'Assessment submitted successfully!';
-            document.getElementById('resultMsg').style.color = '#27ae60';
+            const result = await response.json();
+            document.getElementById('resultMsg').innerHTML = `
+                <div style="text-align: center; margin-top: 2rem;">
+                    <h2>Assessment Complete</h2>
+                    <p>Your score: ${result.score}%</p>
+                </div>
+            `;
         } catch (error) {
             showError('Error submitting assessment: ' + error.message);
         }

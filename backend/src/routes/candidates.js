@@ -211,22 +211,53 @@ router.get('/take/:token', async (req, res) => {
 // Candidate: Submit assessment result (status, score, end_time, answers)
 router.post('/submit/:token', async (req, res) => {
     const { token } = req.params;
-    const { status, score, mc_answers, freeform_answers } = req.body;
-    console.log('Submitting assessment:', { token, status, score });
+    const { status, mc_answers, freeform_answers } = req.body;
+    console.log('Submitting assessment:', { token, status });
     try {
-        // Get assessment id
         const assessment = await new Promise((resolve, reject) => {
-            db.get('SELECT id FROM assessments WHERE token = ?', [token], (err, row) => {
+            db.get(`
+                SELECT a.id, a.test_id, t.name as test_name
+                FROM assessments a
+                JOIN tests t ON a.test_id = t.id
+                WHERE a.token = ?
+            `, [token], (err, row) => {
                 if (err) return reject(err);
                 resolve(row);
             });
         });
         if (!assessment) return res.status(404).json({ message: 'Assessment not found' });
         const assessmentId = assessment.id;
+
+        // Calculate score for MC questions
+        let totalScore = 0;
+        let maxScore = 0;
+        if (Array.isArray(mc_answers)) {
+            // Get all MC questions and their correct answers
+            const mcQuestions = await new Promise((resolve, reject) => {
+                db.all(`
+                    SELECT q.id, q.points, o.id as correct_option_id
+                    FROM mc_questions q
+                    JOIN mc_options o ON q.id = o.mc_question_id
+                    WHERE q.test_id = ? AND o.is_correct = 1
+                `, [assessment.test_id], (err, rows) => {
+                    if (err) return reject(err);
+                    resolve(rows);
+                });
+            });
+
+            // Calculate score
+            for (const question of mcQuestions) {
+                maxScore += question.points;
+                const candidateAnswer = mc_answers.find(ans => ans.mc_question_id === question.id);
+                if (candidateAnswer && candidateAnswer.mc_option_id === question.correct_option_id) {
+                    totalScore += question.points;
+                }
+            }
+        }
+
         // Store MC answers
         if (Array.isArray(mc_answers)) {
             for (const ans of mc_answers) {
-                // ans: { mc_option_id }
                 await new Promise((resolve, reject) => {
                     db.run('INSERT INTO mc_responses (mc_option_id, assessment_id) VALUES (?, ?)', [ans.mc_option_id, assessmentId], (err) => {
                         if (err) return reject(err);
@@ -235,31 +266,40 @@ router.post('/submit/:token', async (req, res) => {
                 });
             }
         }
+
         // Store freeform answers
         if (Array.isArray(freeform_answers)) {
             for (const ans of freeform_answers) {
-                // ans: { freeform_question_id, response_text }
                 await new Promise((resolve, reject) => {
-                    db.run('INSERT INTO freeform_responses (freeform_question_id, assessment_id) VALUES (?, ?)', [ans.freeform_question_id, assessmentId], (err) => {
+                    db.run('INSERT INTO freeform_responses (freeform_question_id, assessment_id, response_text) VALUES (?, ?, ?)', 
+                        [ans.freeform_question_id, assessmentId, ans.response_text], (err) => {
                         if (err) return reject(err);
                         resolve();
                     });
                 });
             }
         }
+
+        // Calculate final score as percentage
+        const finalScore = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0;
+
         // Update assessment status/score
         await new Promise((resolve, reject) => {
             db.run(
                 'UPDATE assessments SET status = ?, score = ?, end_time = CURRENT_TIMESTAMP WHERE token = ?',
-                [status, score, token],
+                ['COMPLETED', finalScore, token],
                 function(err) {
                     if (err) return reject(err);
                     resolve();
                 }
             );
         });
-        console.log('Assessment submitted successfully');
-        res.json({ message: 'Assessment submitted' });
+
+        console.log('Assessment submitted successfully', { finalScore });
+        res.json({ 
+            message: 'Assessment submitted',
+            score: finalScore
+        });
     } catch (error) {
         console.error('Assessment submit error:', error);
         res.status(500).json({ message: 'Internal server error' });
