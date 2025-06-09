@@ -29,6 +29,15 @@
         .form-group { margin-bottom: 15px; }
         .form-group label { display: block; margin-bottom: 5px; }
         .form-group input, .form-group textarea, .form-group select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+        /* Table styles */
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; font-weight: bold; color: #2c3e50; }
+        tr:hover { background: #f8f9fa; }
+        .grade-link { color: #3498db; text-decoration: none; font-weight: bold; }
+        .grade-link:hover { text-decoration: underline; }
+        button { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; background: #3498db; color: white; }
+        button:hover { background: #2980b9; }
     </style>
 </head>
 <body>
@@ -74,6 +83,16 @@
             </form>
         </div>
     </div>
+    <!-- Add a modal for viewing freeform answers -->
+    <div id="freeformModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Freeform Answers</h2>
+                <span class="close-btn" onclick="hideFreeformModal()">&times;</span>
+            </div>
+            <div id="freeformAnswersContent"></div>
+        </div>
+    </div>
     <script>
     // Auth check
     async function checkAuth() {
@@ -97,41 +116,62 @@
             if (!response.ok) throw new Error('Failed to load candidates');
             const candidates = await response.json();
             const candidatesList = document.getElementById('candidatesList');
+            
             if (candidates.length === 0) {
                 candidatesList.innerHTML = '<p>No candidates found. Invite one!</p>';
                 return;
             }
-            // Group by candidate
-            const grouped = {};
+
+            // Create assessments table
+            let html = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Candidate</th>
+                            <th>Test</th>
+                            <th>Status</th>
+                            <th>Score</th>
+                            <th>Start Time</th>
+                            <th>End Time</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+
+            // Add each assessment to the table
             for (const c of candidates) {
-                if (!grouped[c.id]) grouped[c.id] = { ...c, assessments: [] };
-                if (c.assessment_id) grouped[c.id].assessments.push({
-                    id: c.assessment_id,
-                    status: c.status,
-                    test_id: c.test_id,
-                    start_time: c.start_time,
-                    end_time: c.end_time,
-                    score: c.score
-                });
+                if (c.assessment_id) {
+                    const startTime = c.start_time ? new Date(c.start_time).toLocaleString() : 'Not started';
+                    const endTime = c.end_time ? new Date(c.end_time).toLocaleString() : 'Not completed';
+                    const score = c.score !== null ? c.score + '%' : 'Not graded';
+                    const testName = c.test_name || 'N/A';
+
+                    html += `
+                        <tr>
+                            <td>${c.name} (${c.email})</td>
+                            <td>${testName}</td>
+                            <td>${c.status || 'NOT TAKEN'}</td>
+                            <td>${score}</td>
+                            <td>${startTime}</td>
+                            <td>${endTime}</td>
+                            <td>
+                                ${c.status === 'COMPLETED' ? 
+                                    `<a href="grade-assessment.html?id=${c.assessment_id}" class="grade-link">Grade</a> <button onclick="showFreeformModal(${c.assessment_id})" style="margin-left:8px;">View Freeform</button>` :
+                                    `<button onclick="resendInvite(${c.assessment_id})">Resend Invite</button>`
+                                }
+                            </td>
+                        </tr>
+                    `;
+                }
             }
-            candidatesList.innerHTML = Object.values(grouped).map(c => `
-                <div class="quiz-card">
-                    <h3>${c.name} <span style="font-size:0.9em;color:#888;">(${c.email})</span></h3>
-                    <div>
-                        <strong>Assessments:</strong>
-                        <ul>
-                            ${c.assessments.length === 0 ? '<li>None</li>' : c.assessments.map(a => `
-                                <li>
-                                    Test ID: ${a.test_id} | Status: <b>${a.status || 'NOT TAKEN'}</b>
-                                    ${a.score !== null && a.score !== undefined ? `| Score: ${a.score}%` : ''}
-                                    ${a.start_time ? `| Started: ${a.start_time}` : ''}
-                                    ${a.end_time ? `| Ended: ${a.end_time}` : ''}
-                                </li>
-                            `).join('')}
-                        </ul>
-                    </div>
-                </div>
-            `).join('');
+
+            html += `
+                    </tbody>
+                </table>
+            `;
+
+            candidatesList.innerHTML = html;
         } catch (error) {
             document.getElementById('candidatesList').innerHTML = '<p>Error loading candidates.</p>';
         }
@@ -194,6 +234,85 @@
     document.getElementById('inviteCandidateForm').addEventListener('submit', handleInviteCandidateForm);
     // Initial load
     loadCandidates();
+    function renderAssessments(assessments) {
+        const container = document.getElementById('assessmentsContainer');
+        if (!assessments || assessments.length === 0) {
+            container.innerHTML = '<p>No assessments found.</p>';
+            return;
+        }
+
+        let html = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>Candidate</th>
+                        <th>Test</th>
+                        <th>Status</th>
+                        <th>Score</th>
+                        <th>Start Time</th>
+                        <th>End Time</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+        `;
+
+        assessments.forEach(assessment => {
+            const startTime = new Date(assessment.start_time).toLocaleString();
+            const endTime = assessment.end_time ? new Date(assessment.end_time).toLocaleString() : 'Not completed';
+            const score = assessment.score !== null ? assessment.score + '%' : 'Not graded';
+
+            html += `
+                <tr>
+                    <td>${assessment.candidate_name}</td>
+                    <td>${assessment.test_name}</td>
+                    <td>${assessment.status}</td>
+                    <td>${score}</td>
+                    <td>${startTime}</td>
+                    <td>${endTime}</td>
+                    <td>
+                        ${assessment.status === 'COMPLETED' ? 
+                            `<a href="grade-assessment.html?id=${assessment.id}" class="grade-link">Grade</a>` :
+                            `<button onclick="resendInvite(${assessment.id})">Resend Invite</button>`
+                        }
+                    </td>
+                </tr>
+            `;
+        });
+
+        html += `
+                </tbody>
+            </table>
+        `;
+
+        container.innerHTML = html;
+    }
+    // Add a modal for viewing freeform answers
+    const freeformModal = document.createElement('div');
+    freeformModal.id = 'freeformModal';
+    freeformModal.className = 'modal';
+    freeformModal.innerHTML = `
+      <div class="modal-content">
+        <div class="modal-header">
+          <h2>Freeform Answers</h2>
+          <span class="close-btn" onclick="hideFreeformModal()">&times;</span>
+        </div>
+        <div id="freeformAnswersContent"></div>
+      </div>
+    `;
+    document.body.appendChild(freeformModal);
+
+    function showFreeformModal(assessmentId) {
+        const container = document.getElementById('freeformAnswersContent');
+        container.innerHTML = `<div style="margin-bottom:1.5em;">
+            <div style="font-weight:bold;">Q1: Freeform Question</div>
+            <div style="background:#f8f9fa;padding:10px;border-radius:4px;margin-top:5px;">Answer</div>
+        </div>`;
+        document.getElementById('freeformModal').style.display = 'block';
+    }
+    function hideFreeformModal() {
+        document.getElementById('freeformModal').style.display = 'none';
+    }
     </script>
 </body>
 </html> 

@@ -1,4 +1,3 @@
-
 Table users {
   id integer [pk, increment, not null, unique]
   email text [unique, not null]
@@ -21,7 +20,6 @@ Table tests {
   name text [not null]
   instructions text [not null]
   time_limit integer [not null]
-  tests_code text [not null]
   created_at datetime [default: `CURRENT_TIMESTAMP`]
 }
 
@@ -55,7 +53,6 @@ Table freeform_questions {
   id integer [pk, increment, not null, unique]
   test_id integer [ref: > tests.id, not null]
   question_text text [not null]
-  points integer [default: 1]
 }
 
 Table freeform_responses {

@@ -77,11 +77,11 @@ router.delete('/mc/:id', authenticateToken, (req, res) => {
 // --- FREEFORM QUESTIONS ---
 // Create freeform question
 router.post('/freeform', authenticateToken, (req, res) => {
-    const { test_id, question_text, points } = req.body;
+    const { test_id, question_text } = req.body;
     if (!test_id || !question_text) {
         return res.status(400).json({ error: 'Missing required fields for freeform question' });
     }
-    db.run('INSERT INTO freeform_questions (test_id, question_text, points) VALUES (?, ?, ?)', [test_id, question_text, points || 1], function (err) {
+    db.run('INSERT INTO freeform_questions (test_id, question_text) VALUES (?, ?)', [test_id, question_text], function (err) {
         if (err) return res.status(500).json({ error: 'Failed to create freeform question' });
         res.json({ id: this.lastID, message: 'Freeform question created' });
     });
@@ -95,8 +95,8 @@ router.get('/freeform/:testId', authenticateToken, (req, res) => {
 });
 // Update freeform question
 router.put('/freeform/:id', authenticateToken, (req, res) => {
-    const { question_text, points } = req.body;
-    db.run('UPDATE freeform_questions SET question_text = ?, points = ? WHERE id = ?', [question_text, points, req.params.id], function (err) {
+    const { question_text } = req.body;
+    db.run('UPDATE freeform_questions SET question_text = ? WHERE id = ?', [question_text, req.params.id], function (err) {
         if (err) return res.status(500).json({ error: 'Failed to update freeform question' });
         res.json({ message: 'Freeform question updated' });
     });

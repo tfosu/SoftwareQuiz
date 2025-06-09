@@ -167,7 +167,6 @@
                     for (const q of grouped.freeform_questions) {
                         html += `<div class="question-card">
                             <h3>${q.question_text}</h3>
-                            <div class="question-meta">Points: ${q.points}</div>
                             <div class="question-actions">
                                 <button class="edit-btn" onclick="editQuestion('freeform',${q.id},${test.id})">Edit</button>
                                 <button class="delete-btn" onclick="deleteQuestion('freeform',${q.id},${test.id})">Delete</button>
@@ -202,6 +201,7 @@
     function toggleOptions() {
         const type = document.getElementById('questionType').value;
         document.getElementById('optionsGroup').style.display = type === 'multiple_choice' ? 'block' : 'none';
+        document.getElementById('questionPoints').parentElement.style.display = type === 'multiple_choice' ? 'block' : 'none';
     }
     function addOption() {
         const optionsList = document.getElementById('optionsList');
@@ -242,14 +242,16 @@
             // Edit mode
             url = `/api/questions/${window.editingType}/${window.editingQuestion}`;
             method = 'PUT';
-            body = JSON.stringify({ question_text, points, options });
+            body = question_type === 'multiple_choice'
+                ? JSON.stringify({ question_text, points, options })
+                : JSON.stringify({ question_text });
         } else {
             // Create mode
             url = question_type === 'multiple_choice' ? '/api/questions/mc' : '/api/questions/freeform';
             method = 'POST';
             body = question_type === 'multiple_choice'
                 ? JSON.stringify({ test_id, question_text, points, options })
-                : JSON.stringify({ test_id, question_text, points });
+                : JSON.stringify({ test_id, question_text });
         }
         try {
             const response = await fetch(url, {

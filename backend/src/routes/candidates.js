@@ -15,11 +15,11 @@ function requireAuth(req, res, next) {
 router.get('/', requireAuth, (req, res) => {
     console.log('Fetching all candidates for userId:', req.session.userId);
     db.all(`
-        SELECT c.*, a.id as assessment_id, a.status, a.test_id, a.start_time, a.end_time, a.score
+        SELECT c.*, a.id as assessment_id, a.status, a.test_id, a.start_time, a.end_time, a.score, t.name as test_name
         FROM candidates c
         LEFT JOIN assessments a ON c.id = a.candidate_id
         LEFT JOIN tests t ON a.test_id = t.id
-        WHERE t.user_id = ?
+        WHERE t.user_id = ? OR t.user_id IS NULL
         ORDER BY c.created_at DESC
     `, [req.session.userId], (err, rows) => {
         if (err) {

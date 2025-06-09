@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grade Assessment - SoftwareQuiz</title>
+    <style>
+        body { background: #f5f5f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        header { background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.1); padding: 1rem 0; margin-bottom: 2rem; }
+        nav { display: flex; justify-content: space-between; align-items: center; }
+        .logo { font-size: 1.5rem; font-weight: bold; color: #2c3e50; text-decoration: none; }
+        .nav-links a { margin-left: 20px; text-decoration: none; color: #2c3e50; font-weight: bold; padding: 8px 16px; border-radius: 4px; }
+        .nav-links a.active, .nav-links a:hover { background: #3498db; color: #fff; }
+        .assessment-card { background: #fff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); padding: 20px; margin-bottom: 20px; }
+        .question-block { margin-bottom: 30px; padding: 20px; border: 1px solid #eee; border-radius: 4px; }
+        .question-text { font-size: 1.1rem; font-weight: bold; margin-bottom: 10px; }
+        .response-text { background: #f8f9fa; padding: 15px; border-radius: 4px; margin: 10px 0; white-space: pre-wrap; }
+        .score-input { width: 100px; padding: 8px; border: 1px solid #ddd; border-radius: 4px; }
+        .save-btn { background: #2ecc71; color: white; border: none; border-radius: 4px; padding: 10px 20px; cursor: pointer; }
+        .save-btn:hover { background: #27ae60; }
+        .mc-answer { color: #27ae60; font-weight: bold; }
+        .mc-wrong { color: #e74c3c; }
+        .mc-correct { color: #27ae60; }
+        .total-score { font-size: 1.2rem; font-weight: bold; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <header>
+        <nav class="container">
+            <a href="tests.html" class="logo">SoftwareQuiz</a>
+            <div class="nav-links">
+                <a href="tests.html">Tests</a>
+                <a href="candidates.html">Candidates</a>
+                <a href="questions.html">Questions</a>
+                <a href="#" id="logoutBtn" style="background:#e74c3c;color:#fff;">Logout</a>
+            </div>
+        </nav>
+    </header>
+    <main class="container">
+        <div class="assessment-card">
+            <h1 id="assessmentTitle">Loading Assessment...</h1>
+            <div id="candidateInfo"></div>
+            <div id="questionsContainer"></div>
+            <div class="total-score" id="totalScore"></div>
+            <button class="save-btn" id="saveBtn" onclick="saveGrades()" style="display: none;">Save Grades</button>
+        </div>
+    </main>
+    <script>
+    let assessment = null;
+    const urlParams = new URLSearchParams(window.location.search);
+    const assessmentId = urlParams.get('id');
+
+    // Auth check
+    async function checkAuth() {
+        try {
+            const response = await fetch('/api/auth/me', { credentials: 'include' });
+            if (!response.ok) window.location.href = '/login.html';
+        } catch {
+            window.location.href = '/login.html';
+        }
+    }
+    checkAuth();
+
+    // Logout
+    document.getElementById('logoutBtn').onclick = async function() {
+        await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+        window.location.href = '/login.html';
+    };
+
+    async function loadAssessment() {
+        try {
+            const response = await fetch(`/api/assessments/${assessmentId}`, { credentials: 'include' });
+            if (!response.ok) throw new Error('Failed to load assessment');
+            assessment = await response.json();
+            
+            // Update header info
+            document.getElementById('assessmentTitle').textContent = assessment.test_name;
+            document.getElementById('candidateInfo').innerHTML = `
+                <p><strong>Candidate:</strong> ${assessment.candidate_name} (${assessment.candidate_email})</p>
+                <p><strong>Status:</strong> ${assessment.status}</p>
+                <p><strong>Current Score:</strong> ${assessment.score || 'Not graded'}%</p>
+            `;
+
+            // Render questions
+            renderQuestions();
+        } catch (error) {
+            alert('Error loading assessment: ' + error.message);
+        }
+    }
+
+    function renderQuestions() {
+        const container = document.getElementById('questionsContainer');
+        let html = '';
+
+        // MC Questions
+        if (assessment.mc_questions && assessment.mc_questions.length > 0) {
+            html += '<h2>Multiple Choice Questions</h2>';
+            assessment.mc_questions.forEach((q, i) => {
+                const selectedOption = assessment.mc_responses?.find(r => r.mc_question_id === q.id);
+                const correctOption = q.options.find(o => o.is_correct);
+                const isCorrect = selectedOption && correctOption && selectedOption.mc_option_id === correctOption.id;
+
+                html += `
+                    <div class="question-block">
+                        <div class="question-text">Q${i+1}: ${q.question_text}</div>
+                        <div>Points: ${q.points}</div>
+                        <div>Candidate's Answer: 
+                            <span class="${isCorrect ? 'mc-correct' : 'mc-wrong'}">
+                                ${selectedOption ? q.options.find(o => o.id === selectedOption.mc_option_id)?.option_text : 'No answer'}
+                            </span>
+                        </div>
+                        <div>Correct Answer: <span class="mc-correct">${correctOption.option_text}</span></div>
+                        <div>Score: ${isCorrect ? q.points : 0}/${q.points}</div>
+                    </div>
+                `;
+            });
+        }
+
+        // Freeform Questions
+        if (assessment.freeform_questions && assessment.freeform_questions.length > 0) {
+            html += '<h2>Freeform Questions</h2>';
+            assessment.freeform_questions.forEach((q, i) => {
+                const response = assessment.freeform_responses?.find(r => r.freeform_question_id === q.id);
+                html += `
+                    <div class="question-block">
+                        <div class="question-text">Q${i+1}: ${q.question_text}</div>
+                        <div class="response-text">${response?.response_text || 'No response'}</div>
+                    </div>
+                `;
+            });
+        }
+
+        container.innerHTML = html;
+        updateTotalScore();
+    }
+
+    function updateTotalScore() {
+        let totalScore = 0;
+        let maxScore = 0;
+
+        // Calculate MC score
+        if (assessment.mc_questions) {
+            assessment.mc_questions.forEach(q => {
+                maxScore += q.points;
+                const selectedOption = assessment.mc_responses?.find(r => r.mc_question_id === q.id);
+                const correctOption = q.options.find(o => o.is_correct);
+                if (selectedOption && correctOption && selectedOption.mc_option_id === correctOption.id) {
+                    totalScore += q.points;
+                }
+            });
+        }
+
+        // No freeform score calculation
+
+        const percentage = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0;
+        document.getElementById('totalScore').textContent = `Total Score: ${totalScore}/${maxScore} (${percentage}%)`;
+    }
+
+    document.getElementById('saveBtn').style.display = 'none';
+
+    loadAssessment();
+    </script>
+</body>
+</html> 
