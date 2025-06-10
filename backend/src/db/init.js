@@ -1,9 +1,12 @@
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
-// Delete existing database if it exists
-const dbPath = path.join(__dirname, '../../database.sqlite');
+const dbPath = process.env.DB_FILE || path.join(os.tmpdir(), 'database.sqlite');
+
+console.log('Initializing database at:', dbPath);
+
 if (fs.existsSync(dbPath)) {
     console.log('Deleting existing database...');
     fs.unlinkSync(dbPath);
@@ -142,7 +145,7 @@ function initializeDatabase() {
 }
 
 function logResult(tableName) {
-    return function(err) {
+    return function (err) {
         if (err) {
             console.error(`Error creating table ${tableName}:`, err.message);
         } else {

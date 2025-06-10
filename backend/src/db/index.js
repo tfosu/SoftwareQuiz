@@ -2,7 +2,7 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 
-const dbPath = path.join(__dirname, '../../../database.sqlite');
+const dbPath = process.env.DB_FILE || path.join(os.tmpdir(), 'database.sqlite');
 const db = new sqlite3.Database(dbPath);
 
 function initializeDatabase() {
