@@ -1,7 +1,8 @@
-const sqlite3 = require('sqlite3').verbose();
+const os = require('os');
 const path = require('path');
+const sqlite3 = require('sqlite3').verbose();
 
-const dbPath = process.env.DB_FILE || path.join(__dirname, '../../database.sqlite');
+const dbPath = process.env.DB_FILE || path.join(os.tmpdir(), 'database.sqlite');
 
 // Create a new database connection
 const db = new sqlite3.Database(dbPath, (err) => {
