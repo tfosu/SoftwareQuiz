@@ -99,21 +99,71 @@ router.put('/:id', requireAuth, (req, res) => {
 });
 
 // Delete a test
-router.delete('/:id', requireAuth, (req, res) => {
+router.delete('/:id', requireAuth, async (req, res) => {
     const testId = req.params.id;
     console.log('Deleting test:', { testId, userId: req.session.userId });
-    db.run('DELETE FROM tests WHERE id = ? AND user_id = ?', [testId, req.session.userId], function (err) {
-        if (err) {
-            console.error('DB error on test deletion:', err);
-            return res.status(500).json({ message: 'Database error' });
-        }
-        if (this.changes === 0) {
-            console.log('Test not found for deletion:', { testId, userId: req.session.userId });
-            return res.status(404).json({ message: 'Test not found' });
-        }
-        console.log('Test deleted successfully:', { testId });
-        res.json({ message: 'Test deleted' });
-    });
+    
+    try {
+        // Start a transaction
+        db.serialize(() => {
+            db.run('BEGIN TRANSACTION');
+            
+            // Delete in order of dependencies:
+            // 1. Delete MC responses (through assessments)
+            db.run(`
+                DELETE FROM mc_responses 
+                WHERE assessment_id IN (
+                    SELECT id FROM assessments WHERE test_id = ?
+                )
+            `, [testId]);
+            
+            // 2. Delete freeform responses (through assessments)
+            db.run(`
+                DELETE FROM freeform_responses 
+                WHERE assessment_id IN (
+                    SELECT id FROM assessments WHERE test_id = ?
+                )
+            `, [testId]);
+            
+            // 3. Delete assessments
+            db.run('DELETE FROM assessments WHERE test_id = ?', [testId]);
+            
+            // 4. Delete MC options (through questions)
+            db.run(`
+                DELETE FROM mc_options 
+                WHERE mc_question_id IN (
+                    SELECT id FROM mc_questions WHERE test_id = ?
+                )
+            `, [testId]);
+            
+            // 5. Delete MC questions
+            db.run('DELETE FROM mc_questions WHERE test_id = ?', [testId]);
+            
+            // 6. Delete freeform questions
+            db.run('DELETE FROM freeform_questions WHERE test_id = ?', [testId]);
+            
+            // 7. Finally, delete the test
+            db.run('DELETE FROM tests WHERE id = ? AND user_id = ?', [testId, req.session.userId], function(err) {
+                if (err) {
+                    console.error('DB error on test deletion:', err);
+                    db.run('ROLLBACK');
+                    return res.status(500).json({ message: 'Database error' });
+                }
+                if (this.changes === 0) {
+                    console.log('Test not found for deletion:', { testId, userId: req.session.userId });
+                    db.run('ROLLBACK');
+                    return res.status(404).json({ message: 'Test not found' });
+                }
+                db.run('COMMIT');
+                console.log('Test and all related data deleted successfully:', { testId });
+                res.json({ message: 'Test and all related data deleted successfully' });
+            });
+        });
+    } catch (error) {
+        console.error('Error in test deletion:', error);
+        db.run('ROLLBACK');
+        res.status(500).json({ message: 'Database error' });
+    }
 });
 
 module.exports = router; 

@@ -189,7 +189,7 @@
     }
     // Delete test
     window.deleteTest = async function(id) {
-        if (!confirm('Are you sure you want to delete this test?')) return;
+        if (!confirm('Are you sure you want to delete this test?\n\nThis will also delete:\n• All assessments for this test\n• All multiple choice questions and their options\n• All freeform questions\n• All candidate responses\n\nThis action cannot be undone.')) return;
         try {
             const response = await fetch(`/api/tests/${id}`, {
                 method: 'DELETE',
